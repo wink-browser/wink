@@ -29,8 +29,8 @@ enum Theme {
     static let aurora: [Color] = auroraNS.map { Color(nsColor: $0) }
     /// Wink's cobalt (the logo's iris): the agent cursor's eye.
     static let cobaltNS = NSColor(srgbRed: 0.118, green: 0.353, blue: 0.776, alpha: 1)
-    /// The logo's mustard paper and the cream it is printed with.
-    static let mustardNS = NSColor(srgbRed: 0.945, green: 0.686, blue: 0.114, alpha: 1)
+    /// The logo's paper, reprinted in coral (#FC9A7C), and the cream it is printed with.
+    static let coralNS = NSColor(srgbRed: 0.988, green: 0.604, blue: 0.486, alpha: 1)
     static let paperNS = NSColor(srgbRed: 0.965, green: 0.937, blue: 0.878, alpha: 1)
 
     /// A quiet aurora hairline for Winky's surfaces on the page.

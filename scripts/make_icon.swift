@@ -1,9 +1,12 @@
 // Builds Wink's brand assets from the logo artwork:
-//   - AppIcon.icns (+ a 1024 px PNG): the eye on mustard, set into the macOS
-//     icon grid (an 824 pt rounded square, 100 pt margin, soft shadow);
+//   - AppIcon.icns (+ a 1024 px PNG): the eye reprinted on coral paper,
+//     set into the macOS icon grid (an 824 pt rounded square, 100 pt margin,
+//     soft shadow);
 //   - WinkEye.png: the eye alone on transparency, for agent presence in the
 //     UI (cursor, pill, prompts, panel). Its alpha matte is derived from the
 //     artwork itself (keying out the mustard paper), never a drawn shape.
+//   The artwork keeps its original mustard paper: that saturated paper is what
+//   lets the eye key out cleanly. Only the icon swaps it for coral.
 //   - Winky.jpg + WinkyAvatar.png (optional third argument: Winky's portrait):
 //     the welcome-screen portrait and the circle-ready face crop for Winky,
 //     Wink's assistant.
@@ -22,10 +25,58 @@ guard arguments.count == 3 || arguments.count == 4,
 }
 let output = URL(fileURLWithPath: arguments[2])
 
-// Square crop centred on the eye (the artwork is centred).
+/// The brand paper: coral, #FC9A7C (Theme.coralNS).
+let coral = (r: 252.0, g: 154.0, b: 124.0)
+
+// MARK: - The paper
+
+/// How much of a pixel is eye rather than paper. Keyed on "yellowness",
+/// (R+G)/2 − B, which separates the mustard paper (and its texture and
+/// shading) from the cobalt, white and black of the eye.
+func eyeAlpha(_ r: Double, _ g: Double, _ b: Double) -> Double {
+    let t = min(1, max(0, ((r + g) / 2 - b - 38) / (92 - 38)))
+    return 1 - t * t * (3 - 2 * t)  // smoothstep
+}
+
+/// The paper's colour, from the corners of an RGBA buffer.
+func paperColor(_ pixels: [UInt8], width w: Int, height h: Int) -> (r: Double, g: Double, b: Double) {
+    var sum = (r: 0.0, g: 0.0, b: 0.0), samples = 0.0
+    for (cx, cy) in [(0, 0), (w - 60, 0), (0, h - 60), (w - 60, h - 60)] {
+        for y in cy..<(cy + 60) { for x in cx..<(cx + 60) {
+            let i = (y * w + x) * 4
+            sum.r += Double(pixels[i]); sum.g += Double(pixels[i + 1]); sum.b += Double(pixels[i + 2]); samples += 1
+        } }
+    }
+    return (sum.r / samples, sum.g / samples, sum.b / samples)
+}
+
+/// Reprints the artwork on new paper. The eye is untouched; the paper, and the
+/// paper's share of every edge pixel, shifts to `target` and keeps its grain,
+/// so the lashes carry no fringe of the old paper.
+func repaper(_ image: CGImage, to target: (r: Double, g: Double, b: Double)) -> CGImage? {
+    let w = image.width, h = image.height
+    var pixels = [UInt8](repeating: 0, count: w * h * 4)
+    guard let context = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+    let paper = paperColor(pixels, width: w, height: h)
+    let shift = (r: target.r - paper.r, g: target.g - paper.g, b: target.b - paper.b)
+    for i in stride(from: 0, to: pixels.count, by: 4) {
+        let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
+        let share = 1 - eyeAlpha(r, g, b)
+        guard share > 0 else { continue }
+        pixels[i] = UInt8(min(255, max(0, (r + share * shift.r).rounded())))
+        pixels[i + 1] = UInt8(min(255, max(0, (g + share * shift.g).rounded())))
+        pixels[i + 2] = UInt8(min(255, max(0, (b + share * shift.b).rounded())))
+    }
+    return context.makeImage()
+}
+
+// Square crop centred on the eye (the artwork is centred), reprinted on coral.
 let side = min(source.width, source.height)
-let art = source.cropping(to: CGRect(x: (source.width - side) / 2, y: (source.height - side) / 2,
-                                     width: side, height: side))!
+let art = repaper(source.cropping(to: CGRect(x: (source.width - side) / 2, y: (source.height - side) / 2,
+                                             width: side, height: side))!, to: coral)!
 
 func drawIcon(pixels: Int) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
@@ -39,12 +90,12 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
 
     let body = CGRect(x: 100, y: 100, width: 824, height: 824)
     let squircle = NSBezierPath(roundedRect: body, xRadius: 186, yRadius: 186)
-    // Lift off the Dock with a soft shadow (drawn with the mustard so the
-    // edge never shows a dark fringe).
+    // Lift off the Dock with a soft shadow (drawn with the paper's coral so
+    // the edge never shows a dark fringe).
     context.saveGState()
     context.setShadow(offset: CGSize(width: 0, height: -10), blur: 26,
                       color: NSColor.black.withAlphaComponent(0.32).cgColor)
-    NSColor(srgbRed: 0.95, green: 0.69, blue: 0.16, alpha: 1).setFill()
+    NSColor(srgbRed: coral.r / 255, green: coral.g / 255, blue: coral.b / 255, alpha: 1).setFill()
     squircle.fill()
     context.restoreGState()
 
@@ -91,26 +142,13 @@ func cutOutEye(from image: CGImage, width outputWidth: Int) -> Data? {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
     context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
 
-    // The paper's colour, from the corners.
-    var paper = (r: 0.0, g: 0.0, b: 0.0), samples = 0.0
-    for (cx, cy) in [(0, 0), (w - 60, 0), (0, h - 60), (w - 60, h - 60)] {
-        for y in cy..<(cy + 60) { for x in cx..<(cx + 60) {
-            let i = (y * w + x) * 4
-            paper.r += Double(pixels[i]); paper.g += Double(pixels[i + 1]); paper.b += Double(pixels[i + 2]); samples += 1
-        } }
-    }
-    paper = (paper.r / samples, paper.g / samples, paper.b / samples)
-
-    // Key on "yellowness" — (R+G)/2 − B — which separates mustard paper (and
-    // its texture and shading) from the cobalt, white and black of the eye.
+    let paper = paperColor(pixels, width: w, height: h)
     var minX = w, minY = h, maxX = 0, maxY = 0
     for y in 0..<h {
         for x in 0..<w {
             let i = (y * w + x) * 4
             let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
-            let yellow = (r + g) / 2 - b
-            let t = min(1, max(0, (yellow - 38) / (92 - 38)))
-            let alpha = 1 - t * t * (3 - 2 * t)  // smoothstep
+            let alpha = eyeAlpha(r, g, b)
             if alpha < 0.004 {
                 pixels[i] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0; pixels[i + 3] = 0
                 continue

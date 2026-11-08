@@ -67,9 +67,9 @@ private struct WelcomeCard: View {
         .animation(.smooth(duration: 0.35), value: model.step)
     }
 
-    // Winky, full height, on her mustard paper, with her name in the corner.
+    // Winky, full height, on her coral paper, with her name in the corner.
     private var portrait: some View {
-        Color(nsColor: Theme.mustardNS)
+        Color(nsColor: Theme.coralNS)
             .frame(width: 300)
             .overlay {
                 if let image = Winky.portrait {
