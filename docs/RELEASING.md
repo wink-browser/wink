@@ -38,12 +38,12 @@ The version comes from `project(Wink VERSION …)` in `CMakeLists.txt`.
 Releases are public downloads on [wink-browser/releases](https://github.com/wink-browser/releases), which holds no source. Attach the DMG as `Wink.dmg`, so the website's link to the latest release keeps working:
 
 ```sh
-v=0.1.0
+v=0.2.0
 cp build-release/dist/Wink-$v.dmg Wink.dmg && shasum -a 256 Wink.dmg > Wink.dmg.sha256
 gh release create v$v --repo wink-browser/releases --title "Wink $v" --notes-file notes.md Wink.dmg Wink.dmg.sha256
 ```
 
-The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) needs no change: its Download button always points at `releases/latest/download/Wink.dmg`.
+Then tell installed copies about it. The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) serves `latest.json`, which Wink's daily update check reads. Bump its `version`, commit, and deploy with `vercel deploy --prod`. The Download button needs no change: it always points at `releases/latest/download/Wink.dmg`.
 
 ## Before shipping
 
