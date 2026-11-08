@@ -245,7 +245,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
         let newTab = mode == .newTab
         if forceAsk {
             hide()
-            if !text.isEmpty { target.showAgentPanel(); AgentPanelModel.shared.send(text) }
+            if !text.isEmpty { target.askWinky(text) }
             return
         }
         guard suggestions.indices.contains(index) else {
@@ -259,8 +259,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
         case .tab:
             if let tab = suggestion.tab { AppDelegate.shared?.reveal(tab) }
         case .ask:
-            target.showAgentPanel()
-            AgentPanelModel.shared.send(suggestion.title)
+            target.askWinky(suggestion.title)
         case .url, .search, .history:
             target.open(suggestion.value, inNewTab: newTab)
         }

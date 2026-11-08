@@ -33,6 +33,10 @@ enum Theme {
     static let mustardNS = NSColor(srgbRed: 0.945, green: 0.686, blue: 0.114, alpha: 1)
     static let paperNS = NSColor(srgbRed: 0.965, green: 0.937, blue: 0.878, alpha: 1)
 
+    /// A quiet aurora hairline for Winky's surfaces on the page.
+    static let auroraBorder = AngularGradient(
+        colors: (auroraNS + [auroraNS[0]]).map { Color(nsColor: $0).opacity(0.5) }, center: .center)
+
     static let agentGradient = LinearGradient(
         colors: [aurora[0], aurora[3]], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let agentColor = aurora[0]

@@ -247,7 +247,7 @@ struct QuietIconButton: View {
     }
 }
 
-private struct StopButton: View {
+struct StopButton: View {
     let action: () -> Void
     @State private var hovering = false
 

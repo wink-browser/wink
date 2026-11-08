@@ -37,6 +37,32 @@ final class AgentPanelModel: AgentEngineDelegate {
     var focusToken = 0
     var isRunning = false
     var lastCost: String?
+    /// The on-page answer card was dismissed (it returns with the next question).
+    var answerHidden = false
+    /// Bumped to focus the on-page Winky bar.
+    var barFocusToken = 0
+
+    /// The latest question and everything Winky did and said after it, for
+    /// the on-page answer card.
+    struct Exchange {
+        struct Step { let title: String; let symbol: String }
+        let question: String
+        let steps: [Step]
+        let answer: String
+        let error: String?
+    }
+
+    var latestExchange: Exchange? {
+        guard let start = items.lastIndex(where: { $0.kind == .user }) else { return nil }
+        let tail = items[items.index(after: start)...]
+        let steps = tail.filter { $0.kind == .tool }.map { item -> Exchange.Step in
+            let tool = ToolPresentation(raw: item.title, summary: item.text, output: item.output, done: item.status != .running)
+            return Exchange.Step(title: tool.title, symbol: tool.symbol)
+        }
+        let answer = tail.filter { $0.kind == .assistant }.map(\.text).joined(separator: "\n\n")
+        return Exchange(question: items[start].text, steps: steps, answer: answer,
+                        error: tail.last(where: { $0.kind == .error })?.text)
+    }
 
     @ObservationIgnored let session = AgentSession(name: Winky.name, origin: .panel, trusted: true)
     @ObservationIgnored private lazy var api: ClaudeAPIEngine = {
@@ -94,6 +120,7 @@ final class AgentPanelModel: AgentEngineDelegate {
     func newConversation() {
         api.reset()
         code.reset()
+        answerHidden = false
         items.removeAll()
         toolItems.removeAll()
         currentAssistant = nil

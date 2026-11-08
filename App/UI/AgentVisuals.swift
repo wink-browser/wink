@@ -23,6 +23,8 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
     enum Placement { case inner, outer }
 
     /// Shared start time keeps the inner and outer light in phase.
+    /// Lit, the aurora rests below full strength: present, easy on the eyes.
+    static let restingOpacity: Float = 0.82
     private static let epoch = CACurrentMediaTime()
 
     let placement: Placement
@@ -57,7 +59,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
         falloff.contentsGravity = .resize
         if placement == .inner {
             rim.fillColor = nil
-            rim.strokeColor = NSColor.white.cgColor
+            rim.strokeColor = NSColor.white.withAlphaComponent(0.7).cgColor  // a fine line, not a neon tube
             rim.lineWidth = 3  // half of it is clipped by the card's continuous corners
             falloff.addSublayer(rim)
         }
@@ -70,7 +72,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
             gradient.contentsScale = 0.5  // smooth color field: low resolution is invisible
             breath.addSublayer(gradient)
         }
-        spinB.opacity = 0.55
+        spinB.opacity = 0.4
         spinB.compositingFilter = "screenBlendMode"
         field.addSublayer(breath)
         layer?.addSublayer(field)
@@ -116,7 +118,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
             scheduleMask()
             startMotion()
             isDimmed = dimmed
-            fade(to: dimmed ? 0.35 : 1, duration: 0.7, timing: Theme.easeOut)
+            fade(to: dimmed ? 0.3 : Self.restingOpacity, duration: 0.7, timing: Theme.easeOut)
             if placement == .inner {
                 // One authored moment: the light arrives from just beyond the edge.
                 let bloom = CABasicAnimation(keyPath: "transform.scale")
@@ -137,7 +139,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
 
     private func setDimmed(_ dimmed: Bool) {
         isDimmed = dimmed
-        fade(to: dimmed ? 0.35 : 1, duration: 0.4, timing: Theme.easeOut)
+        fade(to: dimmed ? 0.3 : Self.restingOpacity, duration: 0.4, timing: Theme.easeOut)
         for gradient in [spinA, spinB] {
             if dimmed { pause(gradient) } else { resume(gradient) }
         }
@@ -147,7 +149,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
     func swell() {
         guard isLit else { return }
         let swell = CAKeyframeAnimation(keyPath: "opacity")
-        swell.values = [1, 1.6, 1]
+        swell.values = [1, 1.25, 1]
         swell.keyTimes = [0, 0.25, 1]
         swell.duration = 0.6
         breath.add(swell, forKey: "swell")
@@ -180,9 +182,9 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
             gradient.add(spin, forKey: "spin")
         }
         let drift = CABasicAnimation(keyPath: "opacity")
-        drift.fromValue = 0.78
+        drift.fromValue = 0.88
         drift.toValue = 1
-        drift.duration = 2.6
+        drift.duration = 3.8
         drift.autoreverses = true
         drift.repeatCount = .infinity
         drift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -261,10 +263,10 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
                     var a: Float
                     if inner {
                         let t = max(-d, 0)
-                        a = t > 150 ? 0 : 0.6 * expf(-t / 9) + 0.22 * expf(-t / 34)
+                        a = t > 120 ? 0 : 0.3 * expf(-t / 7) + 0.07 * expf(-t / 26)
                     } else {
                         let t = max(d, 0)
-                        a = 0.5 * expf(-t / 6) + 0.2 * expf(-t / 15)
+                        a = 0.2 * expf(-t / 5) + 0.05 * expf(-t / 12)
                     }
                     buffer[y * width + x] = UInt8(min(255, a * 255))
                 }
@@ -305,7 +307,7 @@ final class AuroraGlowView: NSView, SnapshotDrawing {
         let rect = CGRect(origin: .zero, size: CGSize(width: bytes.width, height: bytes.height))
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         context.saveGState()
-        context.setAlpha(CGFloat(isDimmed ? 0.35 : 1))
+        context.setAlpha(CGFloat(isDimmed ? 0.3 : Self.restingOpacity))
         context.clip(to: rect, mask: mask)
         CGContextDrawConicGradient(context, gradient, center, 0)
         context.restoreGState()
@@ -373,8 +375,8 @@ final class EyeLayer: CALayer {
             halo.frame = bounds
             halo.shadowPath = CGPath(ellipseIn: bounds.insetBy(dx: width * 0.06, dy: height * 0.08), transform: nil)
             halo.shadowColor = Theme.auroraNS[0].cgColor
-            halo.shadowOpacity = 0.85
-            halo.shadowRadius = width * 0.24
+            halo.shadowOpacity = 0.45
+            halo.shadowRadius = width * 0.18
             halo.shadowOffset = .zero
             addSublayer(halo)
         }
@@ -481,12 +483,12 @@ final class AgentOverlayView: NSView, SnapshotDrawing {
         wantsLayer = true
         layer?.masksToBounds = true
 
-        highlight.fillColor = Theme.auroraNS[0].withAlphaComponent(0.08).cgColor
-        highlight.strokeColor = Theme.auroraNS[0].withAlphaComponent(0.95).cgColor
+        highlight.fillColor = Theme.auroraNS[0].withAlphaComponent(0.05).cgColor
+        highlight.strokeColor = Theme.auroraNS[0].withAlphaComponent(0.75).cgColor
         highlight.lineWidth = 1.5
         highlight.shadowColor = Theme.auroraNS[0].cgColor
-        highlight.shadowOpacity = 0.55
-        highlight.shadowRadius = 8
+        highlight.shadowOpacity = 0.22
+        highlight.shadowRadius = 6
         highlight.shadowOffset = .zero
         highlight.opacity = 0
         layer?.addSublayer(highlight)
@@ -569,8 +571,8 @@ final class AgentOverlayView: NSView, SnapshotDrawing {
         ripple.strokeColor = NSColor.white.withAlphaComponent(0.92).cgColor
         ripple.lineWidth = 1.5
         ripple.shadowColor = Theme.auroraNS[3].cgColor
-        ripple.shadowOpacity = 0.7
-        ripple.shadowRadius = 5
+        ripple.shadowOpacity = 0.35
+        ripple.shadowRadius = 4
         ripple.shadowOffset = .zero
         ripple.opacity = 0
         layer?.insertSublayer(ripple, below: orb)
@@ -622,7 +624,7 @@ final class AgentOverlayView: NSView, SnapshotDrawing {
         let band = CAGradientLayer()
         let height: CGFloat = min(220, bounds.height * 0.3)
         band.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: height)
-        band.colors = [NSColor.clear, Theme.auroraNS[2].withAlphaComponent(0.10), Theme.auroraNS[1].withAlphaComponent(0.12),
+        band.colors = [NSColor.clear, Theme.auroraNS[2].withAlphaComponent(0.06), Theme.auroraNS[1].withAlphaComponent(0.07),
                        NSColor.clear].map(\.cgColor)
         band.locations = [0, 0.45, 0.6, 1]
         band.position = CGPoint(x: bounds.midX, y: -height / 2)

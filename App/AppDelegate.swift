@@ -232,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func actualSizeAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.resetZoom() }
     @objc func toggleSidebarAction(_ sender: Any?) { activeWindow?.toggleSidebar() }
     @objc func toggleAgentPanelAction(_ sender: Any?) { activeWindow?.toggleAgentPanel() }
+    @objc func toggleWinkyBarAction(_ sender: Any?) { activeWindow?.toggleWinkyBar() }
     @objc func devToolsAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.showDevTools() }
     @objc func printAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.printPage() }
     @objc func nextTabAction(_ sender: Any?) { activeWindow?.selectAdjacentTab(offset: 1) }

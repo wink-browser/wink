@@ -224,6 +224,17 @@ final class DebugDriver {
             WelcomeModel.shared.step = Int(argument) ?? 0
             window?.state.welcomeVisible = true
         case "welcome-off": window?.state.welcomeVisible = false
+        case "winky-bar": window?.toggleWinkyBar()
+        case "winky-demo":
+            // A finished exchange for visual checks (no model call).
+            let model = AgentPanelModel.shared
+            model.items.append(TranscriptItem(kind: .user, text: "What does this page offer, and is there a download?"))
+            let read = TranscriptItem(kind: .tool, text: "", title: "mcp__wink__read_page"); read.status = .done
+            let find = TranscriptItem(kind: .tool, text: "“Download”", title: "mcp__wink__find"); find.status = .done
+            model.items.append(read); model.items.append(find)
+            model.items.append(TranscriptItem(kind: .assistant, text: "It's the **Practice network** page: eight founders in Luxembourg, each with a **Connect** button.\n\n- No download on this page.\n- Five people are already *Pending*."))
+            model.answerHidden = false
+        case "winky-running": AgentPanelModel.shared.isRunning.toggle()
         case "profile-name": Profile.shared.name = argument
         case "takeover":
             // A synthetic click in the middle of the page, as if the user grabbed the mouse.

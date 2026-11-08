@@ -48,6 +48,8 @@ final class BrowserWindowState {
     var agentLogExpanded = false
     /// Winky's welcome card is showing over this window.
     var welcomeVisible = false
+    /// Winky's prompt bar floats over the page (⌘J).
+    var winkyBarVisible = false
     var shieldsPopoverVisible = false
     var downloadsPopoverVisible = false
 

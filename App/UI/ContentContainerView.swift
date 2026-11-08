@@ -23,6 +23,9 @@ final class ContentContainerView: NSView {
     private let promptHost: NSHostingView<PromptStackView>
     private let agentPillHost: NSHostingView<AgentPillView>
     private let agentLogHost: NSHostingView<AgentLogView>
+    /// Winky's prompt bar and answer card, floating over the page (⌘J).
+    private var winkyBarHost: NSHostingView<WinkyBarView>!
+    private var winkyBarHeight: CGFloat = 60
     private let failureHost: NSHostingView<PageFailureView>
     private var loop: ObservationLoop?
     private var fullBleed = false
@@ -67,6 +70,14 @@ final class ContentContainerView: NSView {
             (host as? any SafeAreaIgnoring)?.ignoreSafeArea()
         }
         agentOverlay.isHidden = false
+        winkyBarHost = NSHostingView(rootView: WinkyBarView(state: state, controller: controller) { [weak self] height in
+            guard let self, height > 0, abs(height - self.winkyBarHeight) > 0.5 else { return }
+            self.winkyBarHeight = height
+            self.needsLayout = true
+        })
+        winkyBarHost.safeAreaRegions = []
+        winkyBarHost.isHidden = true
+        clip.addSubview(winkyBarHost)
         updateAppearance()
 
         loop = ObservationLoop(track: { [weak self] in
@@ -75,6 +86,7 @@ final class ContentContainerView: NSView {
             _ = self.state.findBarVisible
             _ = self.state.prompts.count
             _ = self.state.agentLogExpanded
+            _ = self.state.winkyBarVisible
             _ = WinkSettings.shared.agentPillMinimized
             if self.state.agentLogExpanded { _ = AgentHub.shared.activity.count }
             if let tab = self.state.activeTab {
@@ -134,6 +146,12 @@ final class ContentContainerView: NSView {
         UIFocus.shared.find += 1
     }
 
+    /// True while typing in the Winky bar (its field editor lives inside the host).
+    var winkyBarHasFocus: Bool {
+        guard let host = winkyBarHost, !host.isHidden, let responder = window?.firstResponder as? NSView else { return false }
+        return responder.isDescendant(of: host)
+    }
+
     // MARK: - Overlays
 
     private func updateOverlays() {
@@ -145,8 +163,12 @@ final class ContentContainerView: NSView {
         let paused = tab.flatMap { AgentHub.shared.controller(of: $0) }?.isPaused ?? false
         glow.setLit(agentHere, dimmed: paused)
         outerGlow?.setLit(agentHere && !fullBleed, dimmed: paused)
-        agentPillHost.isHidden = !agentHere
-        agentLogHost.isHidden = !agentHere || !state.agentLogExpanded || WinkSettings.shared.agentPillMinimized
+        // With the Winky bar open, Winky's own work shows in the bar instead of the pill.
+        let winkyWorking = tab.flatMap { AgentHub.shared.controller(of: $0) }?.trusted ?? false
+        let barShowsIt = state.winkyBarVisible && (winkyWorking || !agentHere)
+        agentPillHost.isHidden = !agentHere || barShowsIt
+        agentLogHost.isHidden = !agentHere || barShowsIt || !state.agentLogExpanded || WinkSettings.shared.agentPillMinimized
+        winkyBarHost?.isHidden = !state.winkyBarVisible
         if !agentHere { agentOverlay.hideAll() }
         findHost.isHidden = !state.findBarVisible || tab == nil
         promptHost.isHidden = state.prompts.isEmpty
@@ -180,6 +202,14 @@ final class ContentContainerView: NSView {
             let logHeight = min(b.height * 0.55, max(80, agentLogHost.fittingSize.height))
             agentLogHost.frame = NSRect(x: (b.width - pillWidth) / 2, y: agentPillHost.frame.minY - logHeight - 6,
                                         width: pillWidth, height: logHeight)
+        }
+        let barWidth = min(640, b.width - 48)
+        winkyBarHost?.frame = NSRect(x: (b.width - barWidth) / 2, y: b.height - winkyBarHeight - 16,
+                                     width: barWidth, height: winkyBarHeight)
+        // Another agent's pill stacks above the open Winky bar instead of under it.
+        if let bar = winkyBarHost, !bar.isHidden, !agentPillHost.isHidden, !WinkSettings.shared.agentPillMinimized {
+            agentPillHost.frame.origin.y = bar.frame.minY - agentPillHost.frame.height - 8
+            agentLogHost.frame.origin.y = agentPillHost.frame.minY - agentLogHost.frame.height - 6
         }
         for case let view as WinkWebView in clip.subviews { view.frame = b }
     }

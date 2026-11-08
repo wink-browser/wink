@@ -52,7 +52,7 @@ enum MainMenu {
         ]))
         main.addItem(submenu("View", [
             item("Toggle Sidebar", #selector(AppDelegate.toggleSidebarAction(_:)), "s"),
-            item("Agent Panel", #selector(AppDelegate.toggleAgentPanelAction(_:))),
+            item("Winky Sidebar", #selector(AppDelegate.toggleAgentPanelAction(_:)), "j", [.command, .option]),
             .separator(),
             item("Reload Page", #selector(AppDelegate.reloadAction(_:)), "r"),
             item("Reload Ignoring Cache", #selector(AppDelegate.hardReloadAction(_:)), "r", [.command, .shift]),
@@ -74,7 +74,7 @@ enum MainMenu {
             item("Clear Browsing Data…", #selector(AppDelegate.clearBrowsingDataAction(_:)), "\u{8}", [.command, .shift]),
         ]))
         main.addItem(submenu("Agents", [
-            item("Ask Winky", #selector(AppDelegate.toggleAgentPanelAction(_:)), "j"),
+            item("Ask Winky", #selector(AppDelegate.toggleWinkyBarAction(_:)), "j"),
             item("Share This Tab with Agents", #selector(AppDelegate.shareTabWithAgentsAction(_:)), "e", [.command, .shift]),
             item("Stop All Agents", #selector(AppDelegate.stopAgentsAction(_:)), ".", [.command, .shift]),
             .separator(),

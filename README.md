@@ -4,12 +4,12 @@
 
 **An agentic-first web browser for macOS, built on Chromium.**
 
-Wink is a native macOS browser (AppKit + SwiftUI) on the Chromium engine. Agents are first-class: Wink exposes the browser to any agent through the Model Context Protocol, and runs Claude or Claude Code in a panel beside every page. It is private by default: no telemetry, tracker blocking, HTTPS upgrades, and an explicit consent model for everything an agent touches.
+Wink is a native macOS browser (AppKit + SwiftUI) on the Chromium engine. Agents are first-class: Wink exposes the browser to any agent through the Model Context Protocol, and Winky, its assistant, answers and acts right on the page you're on, using Claude or your local Claude Code. It is private by default: no telemetry, tracker blocking, HTTPS upgrades, and an explicit consent model for everything an agent touches.
 
 - **Native and fast.** The UI is native AppKit + SwiftUI, with no web-based browser chrome. It is ready in ~265 ms, keeps live tabs in place so switching is instant, and puts idle tabs to sleep (5 open tabs: 858 MB → 421 MB).
-- **Agentic.** A built-in MCP server lets Claude Code, Claude Desktop, or any MCP client drive Wink, and the agent panel runs Claude (API) or your local Claude Code CLI.
+- **Agentic.** A built-in MCP server lets Claude Code, Claude Desktop, or any MCP client drive Wink, and Winky runs on Claude (API) or your local Claude Code CLI, from a prompt bar that floats over the page (⌘J).
   - **Few round trips.** Every action reports what it changed, and `find` and `batch` handle repetitive work, so agents need far fewer turns.
-  - **Visible.** An aurora glows around the page, Wink's eye glides to each step and winks on every click, and an activity pill offers Pause and Stop.
+  - **Visible.** A soft aurora rims the page, Wink's eye glides to each step and winks on every click, and an activity pill offers Pause and Stop.
   - **Guarded.** Wink asks before an agent sends, buys, deletes or connects; checks in after a burst of such actions; and pauses the agent the moment you click into its page.
 - **Private.** It blocks 93k tracker and ad domains, upgrades to HTTPS, blocks third-party cookies, and sends Global Privacy Control. WebRTC doesn't leak your local IP. The Chromium sandbox is on, and no debugging port is ever opened. There is no account; a daily update check carries anonymous usage counts you can switch off ([details](docs/PRIVACY.md#updates-and-anonymous-counts)).
 - **Personal.** Winky, Wink's assistant, welcomes you on first launch and sets up a local profile (your name and photo, kept on your Mac).
@@ -33,7 +33,8 @@ The first build compiles CEF's C++ wrapper (~2 min on an M3); incremental builds
 |---|---|
 | ⌘T | Command bar: open, search, switch tab, or ask Wink (⌘↩) |
 | ⌘L | Edit the current address |
-| ⌘J | Agent panel (Claude / Claude Code) |
+| ⌘J | Ask Winky, in a prompt bar over the page |
+| ⌥⌘J | Winky's sidebar, for longer conversations |
 | ⌘S | Toggle sidebar (hover the left edge to peek) |
 | ⇧⌘. | Stop all agents |
 | ⇧⌘E | Share the current tab with agents |
@@ -55,7 +56,7 @@ Then ask Claude Code things like *"open localhost:3000 in Wink, click through th
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): how Wink is built on Chromium and how the pieces fit
-- [Agents](docs/AGENTS.md): the MCP tools, what you see, guardrails, the consent model, and the agent panel
+- [Agents](docs/AGENTS.md): the MCP tools, what you see, guardrails, the consent model, and Winky
 - [Privacy](docs/PRIVACY.md): what Wink protects against and how
 - [Releasing](docs/RELEASING.md): signing, notarization and the DMG
 

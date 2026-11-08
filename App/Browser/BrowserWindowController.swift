@@ -191,6 +191,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         updateTrafficLights()
     }
 
+    /// ⌘J: Winky's prompt bar, on top of the page.
+    /// ⌘J: opens the bar, or brings focus back to it from the page; closes it
+    /// only when you're already in it (or Winky is busy and it has no field).
+    func toggleWinkyBar() {
+        if state.winkyBarVisible && (root.content.winkyBarHasFocus || AgentPanelModel.shared.isRunning) {
+            state.winkyBarVisible = false
+            state.activeTab?.webView?.focusContent()
+        } else {
+            showWinkyBar()
+        }
+    }
+
+    func showWinkyBar(prefill: String? = nil) {
+        state.winkyBarVisible = true
+        if let prefill { AgentPanelModel.shared.draft = prefill }
+        AgentPanelModel.shared.barFocusToken += 1
+    }
+
+    /// Asks Winky right on the page (command bar ⌘↩, context menu).
+    func askWinky(_ text: String) {
+        showWinkyBar()
+        AgentPanelModel.shared.answerHidden = false
+        AgentPanelModel.shared.send(text)
+    }
+
     func toggleAgentPanel(focus: Bool = true) {
         state.agentPanelVisible.toggle()
         root.animateLayout()
@@ -344,7 +369,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
             newTab(url: WinkSettings.shared.searchEngine.searchURL(for: info.selectionText), activate: true, after: tab)
         case .askAgent:
             let selection = info.selectionText.trimmingCharacters(in: .whitespacesAndNewlines)
-            showAgentPanel(prefill: selection.isEmpty
+            showWinkyBar(prefill: selection.isEmpty
                 ? "Summarize this page."
                 : "Explain this from the page:\n\n\"\(selection.prefix(2000))\"")
         case .viewSource:
