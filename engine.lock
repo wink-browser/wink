@@ -1,0 +1,7 @@
+# Pinned Chromium engine (CEF binary distribution). Update all values together.
+# Index of builds: https://cef-builds.spotifycdn.com/index.html
+CEF_VERSION="156.0.26+g8ea0c73+chromium-156.0.8078.88"
+CHROMIUM_VERSION="156.0.8078.88"
+CEF_CDN="https://cef-builds.spotifycdn.com"
+CEF_SHA1_MACOSARM64="ca4fafe7a9c52d9f28200bb8713971a9662b891c"
+CEF_SHA1_MACOSX64="f0f47aa3cdefa7eea54f2e8c6e73c68b4db125f3"

@@ -1,0 +1,5 @@
+module WinkEngine {
+  umbrella header "WinkEngine/WinkEngine.h"
+  export *
+  module * { export * }
+}

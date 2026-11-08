@@ -1,0 +1,19 @@
+# Build output
+/build/
+/build-*/
+/out/
+*.o
+*.a
+
+# Third-party binaries fetched by scripts/bootstrap.sh (never committed)
+/third_party/cef/
+/third_party/downloads/
+
+# macOS / editors
+.DS_Store
+*.swp
+.vscode/
+.idea/
+xcuserdata/
+*.xcworkspace
+DerivedData/

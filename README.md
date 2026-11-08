@@ -1,0 +1,67 @@
+<p align="center"><img src="Resources/AppIcon.png" width="128" alt="Wink"></p>
+
+# Wink
+
+**An agentic-first web browser for macOS, built on Chromium.**
+
+Wink is a native macOS browser (AppKit + SwiftUI) on the Chromium engine. Agents are first-class: Wink exposes the browser to any agent through the Model Context Protocol, and runs Claude or Claude Code in a panel beside every page. It is private by default: no telemetry, tracker blocking, HTTPS upgrades, and an explicit consent model for everything an agent touches.
+
+- **Native and fast.** The UI is native AppKit + SwiftUI, with no web-based browser chrome. It is ready in ~265 ms, keeps live tabs in place so switching is instant, and puts idle tabs to sleep (5 open tabs: 858 MB → 421 MB).
+- **Agentic.** A built-in MCP server lets Claude Code, Claude Desktop, or any MCP client drive Wink, and the agent panel runs Claude (API) or your local Claude Code CLI.
+  - **Few round trips.** Every action reports what it changed, and `find` and `batch` handle repetitive work, so agents need far fewer turns.
+  - **Visible.** An aurora glows around the page, Wink's eye glides to each step and winks on every click, and an activity pill offers Pause and Stop.
+  - **Guarded.** Wink asks before an agent sends, buys, deletes or connects; checks in after a burst of such actions; and pauses the agent the moment you click into its page.
+- **Private.** It blocks 93k tracker and ad domains, upgrades to HTTPS, blocks third-party cookies, and sends Global Privacy Control. WebRTC doesn't leak your local IP. The Chromium sandbox is on, and no debugging port is ever opened.
+
+## Build and run
+
+Requirements: macOS 14+, Command Line Tools or Xcode, CMake ≥ 3.29, Ninja (`brew install cmake ninja`).
+
+```sh
+make bootstrap   # download the pinned Chromium engine (CEF 156, checksum-verified)
+make             # build build/Wink.app
+make run         # launch (or `make run-debug` to see logs in the terminal)
+make test        # unit tests for the engine's privacy core
+```
+
+The first build compiles CEF's C++ wrapper (~2 min on an M3); incremental builds take seconds.
+
+## Use it
+
+| | |
+|---|---|
+| ⌘T | Command bar: open, search, switch tab, or ask Wink (⌘↩) |
+| ⌘L | Edit the current address |
+| ⌘J | Agent panel (Claude / Claude Code) |
+| ⌘S | Toggle sidebar (hover the left edge to peek) |
+| ⇧⌘. | Stop all agents |
+| ⇧⌘E | Share the current tab with agents |
+| ⌘1…⌘9, ⌃Tab | Switch tabs |
+| ⇧⌘T | Reopen closed tab |
+| ⌘F, ⌘G | Find in page |
+| ⌥⌘I | Developer tools |
+
+### Connect Claude Code
+
+**Agents › Connect Claude Code…** registers Wink with Claude Code after you confirm. It runs:
+
+```sh
+claude mcp add --scope user wink -- "/Applications/Wink.app/Contents/MacOS/wink-mcp"
+```
+
+Then ask Claude Code things like *"open localhost:3000 in Wink, click through the signup flow and tell me what errors show up in the console."* The first time, Wink asks whether to let Claude Code browse.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md): how Wink is built on Chromium and how the pieces fit
+- [Agents](docs/AGENTS.md): the MCP tools, what you see, guardrails, the consent model, and the agent panel
+- [Privacy](docs/PRIVACY.md): what Wink protects against and how
+- [Releasing](docs/RELEASING.md): signing, notarization and the DMG
+
+## Release
+
+`scripts/release.sh` builds a Developer ID–signed, notarized and stapled `Wink-<version>.dmg`; see [Releasing](docs/RELEASING.md). The landing page lives in its own repository, [wink-browser/website](https://github.com/wink-browser/website), deployed on Vercel.
+
+## Status
+
+Wink is an early build. See the roadmap in [Architecture](docs/ARCHITECTURE.md#roadmap). Notably, the stock CEF binaries ship without proprietary codecs (H.264/AAC) or Widevine; that needs a source build of the engine.
