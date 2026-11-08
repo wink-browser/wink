@@ -33,8 +33,20 @@ The DMG and its `.sha256` land in `build-release/dist/`.
 
 The version comes from `project(Wink VERSION …)` in `CMakeLists.txt`.
 
+## Publish
+
+Releases are public downloads on [wink-browser/releases](https://github.com/wink-browser/releases), which holds no source. Attach the DMG as `Wink.dmg`, so the website's link to the latest release keeps working:
+
+```sh
+v=0.1.0
+cp build-release/dist/Wink-$v.dmg Wink.dmg && shasum -a 256 Wink.dmg > Wink.dmg.sha256
+gh release create v$v --repo wink-browser/releases --title "Wink $v" --notes-file notes.md Wink.dmg Wink.dmg.sha256
+```
+
+The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) needs no change: its Download button always points at `releases/latest/download/Wink.dmg`.
+
 ## Before shipping
 
 - **Launch the signed app.** Hardened-runtime problems show up as helper processes failing to start: blank pages or a crashed renderer.
 - **First launch changes cookie encryption.** A release build encrypts cookies with the real Keychain item ("Wink Safe Storage"), not the dev mock keychain, so the first switch from a dev build signs you out of websites once.
-- **Update the download button.** Point the website's Download button at the new DMG.
+- **Check the download.** Fetch the DMG from the public link and run `shasum -a 256 -c Wink.dmg.sha256` and `spctl -a -t open --context context:primary-signature -vv Wink.dmg`.

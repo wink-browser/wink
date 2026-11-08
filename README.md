@@ -60,7 +60,10 @@ Then ask Claude Code things like *"open localhost:3000 in Wink, click through th
 
 ## Release
 
-`scripts/release.sh` builds a Developer ID–signed, notarized and stapled `Wink-<version>.dmg`; see [Releasing](docs/RELEASING.md). The landing page lives in its own repository, [wink-browser/website](https://github.com/wink-browser/website), deployed on Vercel.
+`scripts/release.sh` builds a Developer ID–signed, notarized and stapled `Wink-<version>.dmg` (see [Releasing](docs/RELEASING.md)).
+
+- **Downloads:** public, on [wink-browser/releases](https://github.com/wink-browser/releases).
+- **Website:** [wink.minnebo.ai](https://wink.minnebo.ai); the code lives in [wink-browser/website](https://github.com/wink-browser/website), deployed on Vercel.
 
 ## Status
 
