@@ -86,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UpdateCenter.shared.checkNow()
     }
 
+    @objc func showImport(_ sender: Any?) {
+        ImportWindow.show()
+    }
+
     /// Brings Wink forward (never for a headless test instance).
     static func activate() {
         guard !DebugDriver.isHeadless else { return }

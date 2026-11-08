@@ -142,8 +142,10 @@ final class DebugDriver {
                 context.scaleBy(x: 1, y: -1)
                 layer.render(in: context)
             }
-            // Prefer AppKit's own drawing path for non-browser windows.
-            if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            // Prefer AppKit's own drawing path for AppKit windows; SwiftUI
+            // content only renders through its layers.
+            let isSwiftUI = String(describing: type(of: view)).hasPrefix("NSHostingView")
+            if !isSwiftUI, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
                 view.cacheDisplay(in: view.bounds, to: rep)
                 if let data = rep.representation(using: .png, properties: [:]) {
                     try? data.write(to: directory.appendingPathComponent("window-\(index).png"))
@@ -235,6 +237,37 @@ final class DebugDriver {
             model.items.append(TranscriptItem(kind: .assistant, text: "It's the **Practice network** page: eight founders in Luxembourg, each with a **Connect** button.\n\n- No download on this page.\n- Five people are already *Pending*."))
             model.answerHidden = false
         case "winky-running": AgentPanelModel.shared.isRunning.toggle()
+        case "import-window": AppDelegate.shared?.showImport(nil)
+        case "import-window-start": ImportWindow.startForTesting()
+        case "import-preview":
+            // Counts only, nothing decrypted: argument picks the source ("chrome"), default the first.
+            let source = BrowserImport.available.first { argument.isEmpty || $0.id == argument }
+            let days = WinkSettings.shared.historyRetentionDays
+            Task.detached { [directory] in
+                var lines = ["source=\(source?.id ?? "none")"]
+                for profile in source.map(BrowserImport.profiles(of:)) ?? [] {
+                    let preview = BrowserImport.preview(profile, days: days)
+                    lines.append("\(profile.id): history=\(preview.history) bookmarks=\(preview.bookmarks) loginSites=\(preview.loginSites)")
+                }
+                try? lines.joined(separator: "\n").write(to: directory!.appendingPathComponent("import.txt"), atomically: true, encoding: .utf8)
+            }
+        case "import":
+            // Imports from the first source (the WINK_IMPORT_TEST_ROOT fixture in tests): "logins,history,bookmarks".
+            guard let source = BrowserImport.available.first, let profile = BrowserImport.profiles(of: source).first else { break }
+            var what: BrowserImport.What = []
+            if argument.contains("logins") { what.insert(.logins) }
+            if argument.contains("history") { what.insert(.history) }
+            if argument.contains("bookmarks") { what.insert(.bookmarks) }
+            Task { @MainActor [directory] in
+                let report = await BrowserImport.run(what.isEmpty ? .all : what, from: source, profile: profile) { _ in }
+                WinkProfile.default.cookieDomains { domains in
+                    let lines = ["source=\(source.id) profile=\(profile.id)",
+                                 "cookies=\(report.cookies) sites=\(report.sites) trackers=\(report.trackers) history=\(report.history) bookmarks=\(report.bookmarks)",
+                                 "problems=\(report.problems)",
+                                 "cookie domains: \(domains.sorted().joined(separator: ", "))"]
+                    try? lines.joined(separator: "\n").write(to: directory!.appendingPathComponent("import.txt"), atomically: true, encoding: .utf8)
+                }
+            }
         case "profile-name": Profile.shared.name = argument
         case "takeover":
             // A synthetic click in the middle of the page, as if the user grabbed the mouse.

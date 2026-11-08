@@ -3,7 +3,7 @@ import WinkEngine
 
 /// One row in the command bar.
 struct CommandSuggestion {
-    enum Kind { case url, search, history, tab, ask }
+    enum Kind { case url, search, history, bookmark, tab, ask }
     let kind: Kind
     let title: String
     let subtitle: String
@@ -12,8 +12,8 @@ struct CommandSuggestion {
     var tab: Tab?
 }
 
-/// Spotlight-style command bar: address, search, open tabs, history, and
-/// "Ask Winky" in one place. AppKit for exact keyboard handling.
+/// Spotlight-style command bar: address, search, open tabs, bookmarks,
+/// history, and "Ask Winky" in one place. AppKit for exact keyboard handling.
 @MainActor
 final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     static let shared = CommandBarController()
@@ -204,6 +204,12 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
                       value: "tab:\(tab.id)", hint: "Switch to Tab", tab: tab))
             seen.insert(tab.url)  // don't repeat an open tab as a history row
         }
+        // Bookmarks (brought over from another browser) come before history.
+        for bookmark in HistoryStore.shared.searchBookmarks(text, limit: 3) {
+            if result.count >= maxRows - 3 { break }
+            add(.init(kind: .bookmark, title: bookmark.title.isEmpty ? URLInput.display(bookmark.url) : bookmark.title,
+                      subtitle: URLInput.display(bookmark.url), value: bookmark.url, hint: "Open"))
+        }
         for entry in history {
             if result.count >= maxRows - 2 { break }
             add(.init(kind: .history, title: entry.title.isEmpty ? URLInput.display(entry.url) : entry.title,
@@ -260,7 +266,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
             if let tab = suggestion.tab { AppDelegate.shared?.reveal(tab) }
         case .ask:
             target.askWinky(suggestion.title)
-        case .url, .search, .history:
+        case .url, .search, .history, .bookmark:
             target.open(suggestion.value, inNewTab: newTab)
         }
     }
@@ -283,7 +289,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
             return true
         case #selector(NSResponder.cancelOperation(_:)): hide(); return true
         case #selector(NSResponder.insertTab(_:)):
-            if suggestions.indices.contains(selectedIndex), suggestions[selectedIndex].kind == .history {
+            if suggestions.indices.contains(selectedIndex), [.history, .bookmark].contains(suggestions[selectedIndex].kind) {
                 field.stringValue = suggestions[selectedIndex].value
                 recompute()
             }
@@ -335,6 +341,7 @@ final class SuggestionRowView: NSView {
         case .url: symbol = "globe"
         case .search: symbol = "magnifyingglass"
         case .history: symbol = "clock"
+        case .bookmark: symbol = "bookmark"
         case .tab: symbol = "square.on.square"
         case .ask: symbol = "sparkle"
         }
@@ -342,7 +349,7 @@ final class SuggestionRowView: NSView {
             icon.image = eye
         } else if suggestion.kind == .tab, let favicon = suggestion.tab?.favicon {
             icon.image = favicon
-        } else if suggestion.kind == .history, let favicon = FaviconCache.shared.image(for: Site.host(of: suggestion.value)) {
+        } else if suggestion.kind == .history || suggestion.kind == .bookmark, let favicon = FaviconCache.shared.image(for: Site.host(of: suggestion.value)) {
             icon.image = favicon
         } else {
             icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)

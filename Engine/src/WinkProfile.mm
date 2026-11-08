@@ -79,7 +79,58 @@ class CookieDomainCollector : public CefCookieVisitor {
   IMPLEMENT_REFCOUNTING(CookieDomainCollector);
 };
 
+// Counts SetCookie results; reports once every cookie has an answer.
+struct ImportTally {
+  ImportTally(NSInteger total, void (^done)(NSInteger, NSInteger))
+      : remaining(total), done([done copy]) {}
+  void Arrive(bool accepted) {
+    (accepted ? imported : rejected)++;
+    if (--remaining == 0 && done) {
+      NSInteger acceptedCount = imported, rejectedCount = rejected;
+      auto block = done;
+      dispatch_async(dispatch_get_main_queue(), ^{ block(acceptedCount, rejectedCount); });
+    }
+  }
+  std::atomic<NSInteger> remaining;
+  std::atomic<NSInteger> imported{0};
+  std::atomic<NSInteger> rejected{0};
+  void (^done)(NSInteger, NSInteger);
+};
+
+class ImportCookieCallback : public CefSetCookieCallback {
+ public:
+  explicit ImportCookieCallback(std::shared_ptr<ImportTally> tally) : tally_(std::move(tally)) {}
+  void OnComplete(bool success) override { tally_->Arrive(success); }
+
+ private:
+  std::shared_ptr<ImportTally> tally_;
+  IMPLEMENT_REFCOUNTING(ImportCookieCallback);
+};
+
+// Chromium time: microseconds since 1601-01-01 UTC.
+cef_basetime_t ToBaseTime(NSDate* date) {
+  cef_basetime_t time;
+  time.val = (int64_t)((date.timeIntervalSince1970 + 11644473600.0) * 1000000.0);
+  return time;
+}
+
 }  // namespace
+
+@implementation WinkCookie
+
+- (instancetype)init {
+  if ((self = [super init])) {
+    _name = @"";
+    _value = @"";
+    _domain = @"";
+    _path = @"/";
+    _sameSite = -1;
+    _priority = 1;
+  }
+  return self;
+}
+
+@end
 
 @implementation WinkProfile {
   CefRefPtr<CefRequestContext> _context;
@@ -172,6 +223,43 @@ class CookieDomainCollector : public CefCookieVisitor {
   CefRefPtr<CefCookieManager> manager = context ? context->GetCookieManager(nullptr) : nullptr;
   if (!manager || !manager->VisitAllCookies(new CookieDomainCollector(completion))) {
     completion(@[]);
+  }
+}
+
+- (void)importCookies:(NSArray<WinkCookie*>*)cookies completion:(void (^)(NSInteger, NSInteger))completion {
+  CefRefPtr<CefRequestContext> context = [self cefRequestContext];
+  CefRefPtr<CefCookieManager> manager = context ? context->GetCookieManager(nullptr) : nullptr;
+  if (!manager || cookies.count == 0) {
+    NSInteger count = (NSInteger)cookies.count;
+    if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion(0, count); });
+    return;
+  }
+  auto tally = std::make_shared<ImportTally>((NSInteger)cookies.count, completion);
+  NSDate* now = [NSDate date];
+  for (WinkCookie* source in cookies) {
+    BOOL domainCookie = [source.domain hasPrefix:@"."];
+    NSString* host = domainCookie ? [source.domain substringFromIndex:1] : source.domain;
+    NSString* path = [source.path hasPrefix:@"/"] ? source.path : @"/";
+    // The URL a site would have set it from: its scheme decides whether a
+    // Secure cookie is allowed, its host whether the domain matches.
+    NSString* url = [NSString stringWithFormat:@"%@://%@%@", source.secure ? @"https" : @"http", host, path];
+
+    CefCookie cookie;
+    CefString(&cookie.name) = wink::ToCef(source.name);
+    CefString(&cookie.value) = wink::ToCef(source.value);
+    if (domainCookie) CefString(&cookie.domain) = wink::ToCef(source.domain);  // empty = host cookie
+    CefString(&cookie.path) = wink::ToCef(path);
+    cookie.secure = source.secure;
+    cookie.httponly = source.httpOnly;
+    cookie.creation = ToBaseTime(source.creation ?: now);
+    cookie.last_access = ToBaseTime(source.lastAccess ?: source.creation ?: now);
+    cookie.has_expires = source.expires != nil;
+    if (source.expires) cookie.expires = ToBaseTime(source.expires);
+    cookie.same_site = (cef_cookie_same_site_t)MAX(0, MIN(3, source.sameSite + 1));
+    cookie.priority = (cef_cookie_priority_t)MAX(-1, MIN(1, source.priority - 1));
+    if (!manager->SetCookie(wink::ToCef(url), cookie, new ImportCookieCallback(tally))) {
+      tally->Arrive(false);  // invalid URL: the callback never runs
+    }
   }
 }
 

@@ -157,6 +157,11 @@ private struct WelcomeCard: View {
                     }
                 }
             }
+            if let source = BrowserImport.available.first {
+                row("Your things") {
+                    Button("Import from \(source.shortName)…") { AppDelegate.shared?.showImport(nil) }
+                }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Share anonymous usage counts", isOn: $settings.shareUsageCounts)
                     .toggleStyle(.switch)

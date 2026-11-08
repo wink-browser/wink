@@ -32,6 +32,8 @@ enum MainMenu {
             item("Close Tab", #selector(AppDelegate.closeTabAction(_:)), "w"),
             item("Close Window", #selector(AppDelegate.closeWindowAction(_:)), "w", [.command, .shift]),
             .separator(),
+            item("Import from Another Browser…", #selector(AppDelegate.showImport(_:))),
+            .separator(),
             item("Print…", #selector(AppDelegate.printAction(_:)), "p"),
         ]))
         main.addItem(submenu("Edit", [

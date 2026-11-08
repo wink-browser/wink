@@ -43,6 +43,15 @@ On the server, the check only increments counters per day, week and month. The c
 
 The website works the same way. It sets no cookies and runs no scripts; it counts page views and download clicks per day (and country), without identifying visitors.
 
+## Importing from another browser
+
+File › Import from Another Browser… (also offered in the welcome) brings logins, history and bookmarks over from Chrome, Arc, Brave, Edge or Vivaldi on the same Mac (`App/Services/BrowserImport.swift`). Nothing is uploaded, and nothing goes through a server:
+
+- Wink reads private copies of the other browser's files, then deletes the copies.
+- **Logins** are that browser's cookies, encrypted with its own "… Safe Storage" key in your Keychain. macOS asks before Wink can read the key; if you don't allow it, logins are skipped. Decrypted values only exist in memory, on their way into Wink's cookie store, which encrypts them again with Wink's own key.
+- Partitioned (third-party) cookies, expired cookies, and cookies whose own host is on Wink's tracker list stay behind.
+- **History** brings the pages from your history retention period (90 days by default). **Bookmarks** become searchable from the command bar. Neither is synced anywhere.
+
 ## Your profile
 
 Your name and optional photo stay on this Mac, in Wink's preferences and its private `State` folder. There is no account. Winky uses your first name in chats, so it is included in what you send to the AI model when you talk to her.

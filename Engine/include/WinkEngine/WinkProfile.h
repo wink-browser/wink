@@ -11,6 +11,26 @@ typedef NS_OPTIONS(NSUInteger, WinkBrowsingDataTypes) {
   WinkBrowsingDataAll = 0xFF,
 };
 
+/// A cookie brought in from another browser. The value is plaintext here;
+/// Chromium encrypts it at rest with Wink's own key.
+@interface WinkCookie : NSObject
+@property (copy) NSString *name;
+@property (copy) NSString *value;
+/// "example.com" makes a host cookie, ".example.com" a domain cookie.
+@property (copy) NSString *domain;
+@property (copy) NSString *path;
+@property BOOL secure;
+@property BOOL httpOnly;
+/// nil for a session cookie.
+@property (nullable, copy) NSDate *expires;
+@property (nullable, copy) NSDate *creation;
+@property (nullable, copy) NSDate *lastAccess;
+/// Chromium's stored values: -1 unspecified, 0 none, 1 lax, 2 strict.
+@property NSInteger sameSite;
+/// Chromium's stored values: 0 low, 1 medium, 2 high.
+@property NSInteger priority;
+@end
+
 /// A browsing profile (cookie jar, cache, storage). Wraps a Chromium
 /// request context. Ephemeral profiles keep everything in memory and vanish
 /// when the last tab using them closes — used for private windows and for
@@ -40,6 +60,12 @@ NS_SWIFT_UI_ACTOR
                     completion:(nullable void (^)(NSInteger deletedCount))completion;
 /// Lists cookie domains (for the privacy report); no values are exposed.
 - (void)cookieDomainsWithCompletion:(void (^)(NSArray<NSString *> *domains))completion;
+/// Adds cookies to this profile (importing logins from another browser).
+/// Chromium validates each one as if a site had set it. The completion runs
+/// on the main thread with how many were accepted and rejected.
+- (void)importCookies:(NSArray<WinkCookie *> *)cookies
+           completion:(nullable void (^)(NSInteger imported, NSInteger rejected))completion
+    NS_SWIFT_NAME(importCookies(_:completion:));
 
 @end
 
