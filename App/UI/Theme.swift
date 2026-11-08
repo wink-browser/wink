@@ -29,6 +29,9 @@ enum Theme {
     static let aurora: [Color] = auroraNS.map { Color(nsColor: $0) }
     /// Wink's cobalt (the logo's iris): the agent cursor's eye.
     static let cobaltNS = NSColor(srgbRed: 0.118, green: 0.353, blue: 0.776, alpha: 1)
+    /// The logo's mustard paper and the cream it is printed with.
+    static let mustardNS = NSColor(srgbRed: 0.945, green: 0.686, blue: 0.114, alpha: 1)
+    static let paperNS = NSColor(srgbRed: 0.965, green: 0.937, blue: 0.878, alpha: 1)
 
     static let agentGradient = LinearGradient(
         colors: [aurora[0], aurora[3]], startPoint: .topLeading, endPoint: .bottomTrailing)

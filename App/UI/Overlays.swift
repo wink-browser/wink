@@ -16,14 +16,19 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 96, height: 96)
-                .accessibilityLabel("Wink")
+            VStack(spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 96, height: 96)
+                    .accessibilityLabel("Wink")
+                Text(Profile.shared.greeting)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
             VStack(spacing: 8) {
                 shortcut("⌘T", "Open or search")
-                shortcut("⌘J", "Ask Wink")
+                shortcut("⌘J", "Talk to Winky")
                 shortcut("⌘S", "Toggle sidebar")
             }
         }

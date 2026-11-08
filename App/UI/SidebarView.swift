@@ -403,11 +403,23 @@ struct SidebarFooter: View {
                 .popover(isPresented: $showDownloads, arrowEdge: .top) { DownloadsPopover() }
                 .help("Downloads")
             }
+            if let update = UpdateCenter.shared.available {
+                Button { UpdateCenter.shared.download() } label: {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(nsColor: Theme.cobaltNS))
+                }
+                .buttonStyle(.plain)
+                .help("Wink \(update.version) is available. Click to download.")
+            }
             Button { AppDelegate.shared?.showSettings(nil) } label: {
                 Image(systemName: "gearshape").font(.system(size: 13))
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .help("Settings (⌘,)")
+            Button { AppDelegate.shared?.showSettings(nil) } label: { ProfileAvatar(size: 22) }
+                .buttonStyle(.plain)
+                .help(Profile.shared.name.isEmpty ? "Your profile" : Profile.shared.name)
         }
         .padding(.horizontal, 12)
         .frame(height: 38)

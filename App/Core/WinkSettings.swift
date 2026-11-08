@@ -125,6 +125,13 @@ final class WinkSettings: @unchecked Sendable {
     /// The on-page activity pill is collapsed to its orb.
     var agentPillMinimized: Bool { didSet { save(agentPillMinimized, "agentPillMinimized") } }
 
+    // Updates & onboarding
+    /// Ask wink.minnebo.ai once a day whether a newer Wink exists.
+    var checkForUpdates: Bool { didSet { save(checkForUpdates, "checkForUpdates") } }
+    /// Add anonymous counts (version, macOS, active this week/month) to that check.
+    var shareUsageCounts: Bool { didSet { save(shareUsageCounts, "shareUsageCounts") } }
+    var onboardingComplete: Bool { didSet { save(onboardingComplete, "onboardingComplete") } }
+
     private init() {
         let d = UserDefaults.standard
         searchEngine = SearchEngine(rawValue: d.string(forKey: "searchEngine") ?? "") ?? .duckDuckGo
@@ -160,6 +167,9 @@ final class WinkSettings: @unchecked Sendable {
         agentPauseOnTakeover = d.object(forKey: "agentPauseOnTakeover") as? Bool ?? true
         agentShowCursor = d.object(forKey: "agentShowCursor") as? Bool ?? true
         agentPillMinimized = d.object(forKey: "agentPillMinimized") as? Bool ?? false
+        checkForUpdates = d.object(forKey: "checkForUpdates") as? Bool ?? true
+        shareUsageCounts = d.object(forKey: "shareUsageCounts") as? Bool ?? true
+        onboardingComplete = d.object(forKey: "onboardingComplete") as? Bool ?? false
     }
 
     private func save(_ value: Any, _ key: String) {

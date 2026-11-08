@@ -38,7 +38,7 @@ final class AgentPanelModel: AgentEngineDelegate {
     var isRunning = false
     var lastCost: String?
 
-    @ObservationIgnored let session = AgentSession(name: "Wink", origin: .panel, trusted: true)
+    @ObservationIgnored let session = AgentSession(name: Winky.name, origin: .panel, trusted: true)
     @ObservationIgnored private lazy var api: ClaudeAPIEngine = {
         let engine = ClaudeAPIEngine(session: session)
         engine.delegate = self
@@ -109,6 +109,7 @@ final class AgentPanelModel: AgentEngineDelegate {
             return "The user has no tab open."
         }
         var lines = ["Active tab: \(tab.displayTitle) — \(tab.url) (tab_id: \(AgentHub.shortID(tab)))"]
+        if !Profile.shared.firstName.isEmpty { lines.append("The user's name: \(Profile.shared.firstName)") }
         if tab.isPrivate {
             lines.append("This tab is in a private window: you cannot access it.")
         } else if WinkSettings.shared.isAgentProtected(host: tab.host_) {
@@ -202,8 +203,8 @@ struct AgentPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                EyeMark(width: 26, blinking: model.isRunning)
-                Text("Wink")
+                WinkyAvatar(size: 24)
+                Text(Winky.name)
                     .font(.system(size: 13.5, weight: .semibold))
                     .lineLimit(1)
                     .fixedSize()
@@ -529,10 +530,15 @@ private struct AgentEmptyState: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            EyeMark(width: 72, blinking: true)
-            Text("Ask about this page,\nor give Wink a task.")
-                .font(.system(size: 15, weight: .medium))
-                .multilineTextAlignment(.center)
+            WinkyAvatar(size: 84)
+            VStack(spacing: 4) {
+                Text(Profile.shared.firstName.isEmpty ? "Hi, I'm Winky." : "Hi \(Profile.shared.firstName), I'm Winky.")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Ask me about this page,\nor give me a task.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
             if model.needsAPIKey {
                 notice("Add your Anthropic API key to use Claude here, or switch to Claude Code.",
                        action: "Open Settings") { AppDelegate.shared?.showSettings(nil) }
@@ -593,7 +599,7 @@ private struct Composer: View {
                 .padding(.horizontal, 4)
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(model.engineKind == .claudeCode ? "Ask Claude Code…" : "Ask anything, or describe a task…",
+                TextField("Ask Winky…",
                           text: $model.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))

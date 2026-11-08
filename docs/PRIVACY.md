@@ -1,6 +1,6 @@
 # Privacy in Wink
 
-Wink sends nothing about you anywhere: no telemetry, crash reporting, or usage metrics, and no account. Everything below is on by default.
+Wink sends nothing about your browsing anywhere: no history, no crash reports, no account. Once a day it checks for updates. Unless you switch it off, that check carries a few anonymous usage counts, described under [Updates and anonymous counts](#updates-and-anonymous-counts). Everything below is on by default.
 
 ## Network protections (engine, `Engine/src/content_blocker.cc`)
 
@@ -29,6 +29,23 @@ These run on Chromium's IO thread for every request in the browser process.
 - **Forget This Site** (shield popover) deletes a site's cookies, storage, cache, and history.
 - **Clear Browsing Data** (⇧⌘⌫) removes cookies, cache, auth, history, favicons, and site storage. Storage for sites that aren't open is removed at next launch.
 - **Search suggestions** are off by default, because they would send every keystroke to your search engine. The default search engine is DuckDuckGo.
+
+## Updates and anonymous counts
+
+Release builds ask `wink.minnebo.ai` for the newest version once a day, so Wink can offer updates. The request contains:
+
+- **Always:** Wink's version and the macOS version (major.minor).
+- **With "Share anonymous usage counts" on** (the default; Settings › Privacy or the welcome screen): whether this is the first check today, this week, this month and ever, plus the week Wink was installed. Those flags let the team count daily, weekly and monthly users, new installs and retention, without identifying anyone.
+
+What it never contains: an identifier, a cookie, your history, your profile, or anything about the pages you visit.
+
+On the server, the check only increments counters per day, week and month. The country is derived from the request in aggregate, and IP addresses are not stored. Turn off **Check for updates** to send nothing at all. Dev builds never check.
+
+The website works the same way. It sets no cookies and runs no scripts; it counts page views and download clicks per day (and country), without identifying visitors.
+
+## Your profile
+
+Your name and optional photo stay on this Mac, in Wink's preferences and its private `State` folder. There is no account. Winky uses your first name in chats, so it is included in what you send to the AI model when you talk to her.
 
 ## Agents
 

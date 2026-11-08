@@ -51,7 +51,9 @@ printf 'APPL????' > "$CONTENTS/PkgInfo"
 
 # --- Resources ---------------------------------------------------------------
 if [[ -f "$RES/AppIcon.icns" ]]; then copy_if_changed "$RES/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns" || true; fi
-if [[ -f "$RES/WinkEye.png" ]]; then copy_if_changed "$RES/WinkEye.png" "$CONTENTS/Resources/WinkEye.png" || true; fi
+for asset in WinkEye.png Winky.jpg WinkyAvatar.jpg; do
+  if [[ -f "$RES/$asset" ]]; then copy_if_changed "$RES/$asset" "$CONTENTS/Resources/$asset" || true; fi
+done
 if [[ -d "$RES/blocklist" ]]; then
   mkdir -p "$CONTENTS/Resources/blocklist"
   rsync -a --delete "$RES/blocklist/" "$CONTENTS/Resources/blocklist/"

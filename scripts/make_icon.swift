@@ -4,17 +4,20 @@
 //   - WinkEye.png: the eye alone on transparency, for agent presence in the
 //     UI (cursor, pill, prompts, panel). Its alpha matte is derived from the
 //     artwork itself (keying out the mustard paper), never a drawn shape.
+//   - Winky.jpg + WinkyAvatar.png (optional third argument: Winky's portrait):
+//     the welcome-screen portrait and the circle-ready face crop for Winky,
+//     Wink's assistant.
 //
 //   make icon
 //   (or: swiftc scripts/make_icon.swift -o build/make_icon &&
-//        build/make_icon Resources/Brand/wink-eye.jpg Resources/AppIcon.icns)
+//        build/make_icon Resources/Brand/wink-eye.jpg Resources/AppIcon.icns [Resources/Brand/winky.jpg])
 
 import AppKit
 
 let arguments = CommandLine.arguments
-guard arguments.count == 3,
+guard arguments.count == 3 || arguments.count == 4,
       let source = NSImage(contentsOfFile: arguments[1])?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-    FileHandle.standardError.write("usage: make_icon <artwork.jpg|png> <out.icns>\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: make_icon <artwork.jpg|png> <out.icns> [winky.jpg]\n".data(using: .utf8)!)
     exit(1)
 }
 let output = URL(fileURLWithPath: arguments[2])
@@ -146,3 +149,38 @@ guard let eyeData = cutOutEye(from: source, width: 360) else {
 }
 try eyeData.write(to: eyeOutput)
 print("✓ \(output.path), \(png.lastPathComponent) and \(eyeOutput.lastPathComponent)")
+
+// MARK: - Winky
+
+/// Crops a rectangle given as fractions of the image (origin top-left) and
+/// scales it to `width` pixels.
+func crop(_ image: CGImage, x: Double, y: Double, w: Double, h: Double, width: Int) -> NSBitmapImageRep? {
+    let rect = CGRect(x: x * Double(image.width), y: y * Double(image.height),
+                      width: w * Double(image.width), height: h * Double(image.height)).integral
+    guard let cut = image.cropping(to: rect) else { return nil }
+    let height = Int((Double(width) * Double(cut.height) / Double(cut.width)).rounded())
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                               bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current!.cgContext.interpolationQuality = .high
+    NSGraphicsContext.current!.cgContext.draw(cut, in: CGRect(x: 0, y: 0, width: width, height: height))
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+if arguments.count == 4, let winky = NSImage(contentsOfFile: arguments[3])?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+    let folder = output.deletingLastPathComponent()
+    // Portrait: head and shoulders, with room on the side she looks toward.
+    if let portrait = crop(winky, x: 0.13, y: 0.02, w: 0.63, h: 0.98, width: 960),
+       let data = portrait.representation(using: .jpeg, properties: [.compressionFactor: 0.86]) {
+        try data.write(to: folder.appendingPathComponent("Winky.jpg"))
+    }
+    // Avatar: the face, square, for a circle mask.
+    if let avatar = crop(winky, x: 0.19, y: 0.085, w: 0.39, h: 0.52, width: 512),
+       let data = avatar.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) {
+        try data.write(to: folder.appendingPathComponent("WinkyAvatar.jpg"))
+    }
+    print("✓ Winky.jpg and WinkyAvatar.jpg")
+}

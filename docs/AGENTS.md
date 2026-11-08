@@ -3,7 +3,7 @@
 Wink treats agents as first-class users of the browser, in two directions:
 
 1. **Agents drive Wink.** A built-in MCP server lets Claude Code, Claude Desktop, or any MCP client browse with your browser, under your consent.
-2. **Wink hosts agents.** The agent panel (⌘J) runs Claude through the Anthropic API, or your local Claude Code CLI, next to the page you're on.
+2. **Wink hosts agents.** The agent panel (⌘J) is **Winky**, Wink's assistant. She runs on Claude through the Anthropic API, or on your local Claude Code CLI, next to the page you're on; the menu beside her name picks the engine. Claude Code sessions started from the panel show up as Winky in the activity pill.
 
 Both use the same tools, `App/Agent/BrowserTools.swift`, and the same consent authority, `App/Agent/AgentHub.swift`.
 

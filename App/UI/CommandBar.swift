@@ -13,7 +13,7 @@ struct CommandSuggestion {
 }
 
 /// Spotlight-style command bar: address, search, open tabs, history, and
-/// "Ask Wink" in one place. AppKit for exact keyboard handling.
+/// "Ask Winky" in one place. AppKit for exact keyboard handling.
 @MainActor
 final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     static let shared = CommandBarController()
@@ -213,7 +213,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
             add(.init(kind: .search, title: text, subtitle: "Search \(engine.displayName)",
                       value: engine.searchURL(for: text), hint: "Search"))
         }
-        add(.init(kind: .ask, title: text, subtitle: "Ask Wink", value: "ask:\(text)", hint: "⌘↩"))
+        add(.init(kind: .ask, title: text, subtitle: "Ask Winky", value: "ask:\(text)", hint: "⌘↩"))
         return result
     }
 
@@ -350,7 +350,7 @@ final class SuggestionRowView: NSView {
             icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         }
         icon.imageScaling = .scaleProportionallyUpOrDown
-        title.stringValue = suggestion.kind == .ask ? "Ask Wink: \(suggestion.title)" : suggestion.title
+        title.stringValue = suggestion.kind == .ask ? "Ask Winky: \(suggestion.title)" : suggestion.title
         title.font = .systemFont(ofSize: 13.5, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
         subtitle.stringValue = suggestion.kind == .ask ? "" : suggestion.subtitle

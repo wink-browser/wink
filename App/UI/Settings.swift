@@ -30,10 +30,29 @@ struct SettingsView: View {
 
 struct GeneralSettings: View {
     @Bindable var settings = WinkSettings.shared
+    @Bindable var profile = Profile.shared
     @State private var defaultBrowserMessage = ""
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 14) {
+                    ProfileAvatar(size: 52)
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Name", text: $profile.name, prompt: Text("Your name"))
+                        HStack(spacing: 12) {
+                            Button(profile.photo == nil ? "Add Photo…" : "Change Photo…") { profile.choosePhoto() }
+                            if profile.photo != nil { Button("Remove Photo") { profile.removePhoto() } }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text("Profile")
+            } footer: {
+                Text("Your profile stays on this Mac; there is no account. Winky uses your first name when you chat with her.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Picker("Search engine", selection: $settings.searchEngine) {
                 ForEach(SearchEngine.allCases) { Text($0.displayName).tag($0) }
             }
@@ -74,7 +93,17 @@ struct PrivacySettings: View {
                 Toggle("Search suggestions while typing", isOn: $settings.searchSuggestions)
                     .help("Off by default: suggestions send every keystroke to your search engine.")
             } footer: {
-                Text("\(WinkContentBlocker.ruleCount) blocking rules loaded. Wink never sends telemetry.")
+                Text("\(WinkContentBlocker.ruleCount) blocking rules loaded. Wink never sends your browsing data anywhere.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Check for updates once a day", isOn: $settings.checkForUpdates)
+                Toggle("Share anonymous usage counts", isOn: $settings.shareUsageCounts)
+                    .disabled(!settings.checkForUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("The daily check sends Wink's version and your macOS version. With usage counts on, it also says whether this is your first check today, this week or this month. No identifier, history or profile detail is ever sent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("History") {
@@ -244,6 +273,8 @@ struct AboutSettings: View {
                 .foregroundStyle(.secondary)
             Text("Chromium \(WinkRuntime.chromiumVersion)").font(.caption).foregroundStyle(.secondary)
             Text("Engine \(WinkRuntime.engineVersion)").font(.caption2).foregroundStyle(.tertiary)
+            Button("Check for Updates…") { UpdateCenter.shared.checkNow() }
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

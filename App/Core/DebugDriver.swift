@@ -220,6 +220,11 @@ final class DebugDriver {
         case "confirm-mode": WinkSettings.shared.agentConfirmMode = AgentConfirmMode(rawValue: argument) ?? .oncePerSite
         case "expand-log": window?.state.agentLogExpanded.toggle()
         case "minimize-pill": WinkSettings.shared.agentPillMinimized.toggle()
+        case "welcome":
+            WelcomeModel.shared.step = Int(argument) ?? 0
+            window?.state.welcomeVisible = true
+        case "welcome-off": window?.state.welcomeVisible = false
+        case "profile-name": Profile.shared.name = argument
         case "takeover":
             // A synthetic click in the middle of the page, as if the user grabbed the mouse.
             if let nsWindow = window?.window, let content = window?.root.content {

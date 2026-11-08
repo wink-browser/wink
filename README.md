@@ -11,7 +11,8 @@ Wink is a native macOS browser (AppKit + SwiftUI) on the Chromium engine. Agents
   - **Few round trips.** Every action reports what it changed, and `find` and `batch` handle repetitive work, so agents need far fewer turns.
   - **Visible.** An aurora glows around the page, Wink's eye glides to each step and winks on every click, and an activity pill offers Pause and Stop.
   - **Guarded.** Wink asks before an agent sends, buys, deletes or connects; checks in after a burst of such actions; and pauses the agent the moment you click into its page.
-- **Private.** It blocks 93k tracker and ad domains, upgrades to HTTPS, blocks third-party cookies, and sends Global Privacy Control. WebRTC doesn't leak your local IP. The Chromium sandbox is on, and no debugging port is ever opened.
+- **Private.** It blocks 93k tracker and ad domains, upgrades to HTTPS, blocks third-party cookies, and sends Global Privacy Control. WebRTC doesn't leak your local IP. The Chromium sandbox is on, and no debugging port is ever opened. There is no account; a daily update check carries anonymous usage counts you can switch off ([details](docs/PRIVACY.md#updates-and-anonymous-counts)).
+- **Personal.** Winky, Wink's assistant, welcomes you on first launch and sets up a local profile (your name and photo, kept on your Mac).
 
 ## Build and run
 

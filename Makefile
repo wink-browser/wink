@@ -37,7 +37,7 @@ blocklist:
 # Regenerate the app icon.
 icon: configure
 	@swiftc $(if $(wildcard $(BUILD_DIR)/swift-overlay/overlay.yaml),-vfsoverlay $(BUILD_DIR)/swift-overlay/overlay.yaml) \
-		scripts/make_icon.swift -o $(BUILD_DIR)/make_icon && $(BUILD_DIR)/make_icon Resources/Brand/wink-eye.jpg Resources/AppIcon.icns
+		scripts/make_icon.swift -o $(BUILD_DIR)/make_icon && $(BUILD_DIR)/make_icon Resources/Brand/wink-eye.jpg Resources/AppIcon.icns Resources/Brand/winky.jpg
 
 clean:
 	@rm -rf $(BUILD_DIR)

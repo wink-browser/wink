@@ -46,6 +46,8 @@ final class BrowserWindowState {
     var prompts: [PromptRequest] = []
     /// The agent pill's activity log is open.
     var agentLogExpanded = false
+    /// Winky's welcome card is showing over this window.
+    var welcomeVisible = false
     var shieldsPopoverVisible = false
     var downloadsPopoverVisible = false
 

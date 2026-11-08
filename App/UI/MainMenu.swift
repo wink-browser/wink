@@ -9,6 +9,8 @@ enum MainMenu {
         let main = NSMenu()
         main.addItem(submenu("Wink", [
             item("About Wink", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp),
+            item("Check for Updates…", #selector(AppDelegate.checkForUpdates(_:))),
+            item("Welcome to Wink…", #selector(AppDelegate.showWelcome(_:))),
             .separator(),
             item("Settings…", #selector(AppDelegate.showSettings(_:)), ","),
             .separator(),
@@ -72,7 +74,7 @@ enum MainMenu {
             item("Clear Browsing Data…", #selector(AppDelegate.clearBrowsingDataAction(_:)), "\u{8}", [.command, .shift]),
         ]))
         main.addItem(submenu("Agents", [
-            item("Ask Wink", #selector(AppDelegate.toggleAgentPanelAction(_:)), "j"),
+            item("Ask Winky", #selector(AppDelegate.toggleAgentPanelAction(_:)), "j"),
             item("Share This Tab with Agents", #selector(AppDelegate.shareTabWithAgentsAction(_:)), "e", [.command, .shift]),
             item("Stop All Agents", #selector(AppDelegate.stopAgentsAction(_:)), ".", [.command, .shift]),
             .separator(),

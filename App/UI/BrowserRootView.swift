@@ -48,6 +48,7 @@ final class BrowserRootView: NSView {
     /// The aurora's spill onto the window around the card (behind it).
     let outerGlow = AuroraGlowView(placement: .outer)
     private let agentHost: NSHostingView<AgentPanelView>
+    private let welcomeHost: NSHostingView<WelcomeOverlay>
     private let sidebarResizer = ResizeHandleView()
     private let agentResizer = ResizeHandleView()
     private var loop: ObservationLoop?
@@ -62,7 +63,10 @@ final class BrowserRootView: NSView {
         sidebarHost = NSHostingView(rootView: SidebarView(state: controller.state, controller: controller))
         content = ContentContainerView(controller: controller)
         agentHost = NSHostingView(rootView: AgentPanelView(model: AgentPanelModel.shared, window: controller))
+        welcomeHost = NSHostingView(rootView: WelcomeOverlay(controller: controller))
         super.init(frame: .zero)
+        welcomeHost.safeAreaRegions = []
+        welcomeHost.isHidden = true
 
         background.material = .sidebar
         background.blendingMode = .behindWindow
@@ -100,6 +104,7 @@ final class BrowserRootView: NSView {
         }
         addSubview(sidebarResizer)
         addSubview(agentResizer)
+        addSubview(welcomeHost)  // topmost: a modal over the whole window
 
         loop = ObservationLoop(track: { [weak self] in
             guard let self else { return }
@@ -107,9 +112,13 @@ final class BrowserRootView: NSView {
             _ = self.state.sidebarPeeking
             _ = self.state.agentPanelVisible
             _ = self.state.contentFullscreen
+            _ = self.state.welcomeVisible
         }, onChange: { [weak self] in
-            self?.needsLayout = true
-            self?.controller.updateTrafficLights()
+            guard let self else { return }
+            self.needsLayout = true
+            self.controller.updateTrafficLights()
+            self.welcomeHost.isHidden = !self.state.welcomeVisible
+            if self.state.welcomeVisible { self.window?.makeFirstResponder(self.welcomeHost) }
         })
     }
 
@@ -135,6 +144,7 @@ final class BrowserRootView: NSView {
     private func layoutPanes(animated: Bool = false) {
         let bounds = self.bounds
         background.frame = bounds
+        welcomeHost.frame = bounds
         let inset = Theme.contentInset
         let sidebarWidth = CGFloat(settings.sidebarWidth)
         let agentWidth = CGFloat(settings.agentPanelWidth)

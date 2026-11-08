@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         AgentHub.shared.start()
+        UpdateCenter.shared.start()
         DebugDriver.shared.startIfRequested()
 
         if WinkSettings.shared.restoreSession, let snapshot = SessionStore.shared.load(), !snapshot.windows.isEmpty {
@@ -65,12 +66,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if windows.isEmpty { newWindow(isPrivate: false) }
+        if !WinkSettings.shared.onboardingComplete && !DebugDriver.isHeadless {
+            windows.first?.state.welcomeVisible = true
+        }
         launched = true
         let urls = pendingURLs
         pendingURLs.removeAll()
         urls.forEach { openExternalURL($0) }
         Self.activate()
         NSLog("[wink] ready in %.0f ms", Date().timeIntervalSince(Self.launchStart) * 1000)
+    }
+
+    @objc func showWelcome(_ sender: Any?) {
+        WelcomeModel.shared.step = 0
+        (activeWindow ?? newWindow(isPrivate: false)).state.welcomeVisible = true
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        UpdateCenter.shared.checkNow()
     }
 
     /// Brings Wink forward (never for a headless test instance).

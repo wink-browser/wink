@@ -228,7 +228,8 @@ final class MCPSessionController {
     private func makeSession(clientName: String, version: String) -> AgentSession {
         let token = helloInfo["token"] as? String ?? ""
         let trusted = !token.isEmpty && token == AgentHub.shared.internalToken
-        let session = AgentSession(name: Self.displayName(for: clientName), origin: .mcp, trusted: trusted)
+        // Claude Code launched from Wink's panel is Winky's engine: show it as Winky.
+        let session = AgentSession(name: trusted ? Winky.name : Self.displayName(for: clientName), origin: .mcp, trusted: trusted)
         session.clientVersion = version
         session.parentProcess = helloInfo["parent"] as? String ?? ""
         AgentHub.shared.register(session)
