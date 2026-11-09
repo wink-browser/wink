@@ -46,7 +46,7 @@ final class UpdateCenter: NSObject {
     }()
 
     /// Test hook: the update test serves its own feed (only with the debug driver).
-    private static let testFeed: String? = {
+    nonisolated private static let testFeed: String? = {
         let env = ProcessInfo.processInfo.environment
         return env["WINK_DEBUG_DIR"] != nil ? env["WINK_UPDATE_FEED"] : nil
     }()
