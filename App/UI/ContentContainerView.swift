@@ -27,6 +27,7 @@ final class ContentContainerView: NSView {
     private var winkyBarHost: NSHostingView<WinkyBarView>!
     private var winkyBarHeight: CGFloat = 60
     private let failureHost: NSHostingView<PageFailureView>
+    private let fullscreenHintHost: PassthroughHostingView<FullscreenHintView>
     private var loop: ObservationLoop?
     private var fullBleed = false
 
@@ -43,6 +44,7 @@ final class ContentContainerView: NSView {
         agentPillHost = NSHostingView(rootView: AgentPillView(state: state, controller: controller))
         agentLogHost = NSHostingView(rootView: AgentLogView(state: state, controller: controller))
         failureHost = NSHostingView(rootView: PageFailureView(state: state, controller: controller))
+        fullscreenHintHost = PassthroughHostingView(rootView: FullscreenHintView(state: state))
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -78,6 +80,8 @@ final class ContentContainerView: NSView {
         winkyBarHost.safeAreaRegions = []
         winkyBarHost.isHidden = true
         clip.addSubview(winkyBarHost)
+        fullscreenHintHost.safeAreaRegions = []
+        clip.addSubview(fullscreenHintHost)  // above everything; it never takes clicks
         updateAppearance()
 
         loop = ObservationLoop(track: { [weak self] in
@@ -211,6 +215,7 @@ final class ContentContainerView: NSView {
             agentPillHost.frame.origin.y = bar.frame.minY - agentPillHost.frame.height - 8
             agentLogHost.frame.origin.y = agentPillHost.frame.minY - agentLogHost.frame.height - 6
         }
+        fullscreenHintHost.frame = NSRect(x: 0, y: 0, width: b.width, height: 90)
         for case let view as WinkWebView in clip.subviews { view.frame = b }
     }
 }

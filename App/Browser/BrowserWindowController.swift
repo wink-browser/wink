@@ -10,6 +10,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
     private var closedTabs: [(url: String, title: String, index: Int)] = []
     private var closingWindow = false
     private var enteredFullscreenForContent = false
+    /// macOS ignores toggleFullScreen while the window animates; a request made
+    /// then is applied when the animation ends.
+    private var windowFullscreenTransition = false
+    private var pendingWindowFullscreen: Bool?
+    private var escapeMonitor: Any?
     private var grantedPermissions: [String: Bool] = [:]
 
     var activeTab: Tab? { state.activeTab }
@@ -42,6 +47,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         window.contentView = root
         window.title = state.isPrivate ? "Private" : "Wink"
         updateTrafficLights()
+        // Esc leaves page fullscreen (a video, a slideshow) wherever the focus
+        // is, before the page sees it, as in Chrome, so no site can trap you there.
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, self.state.contentFullscreen, event.keyCode == 53,
+                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return event }
+            self.exitContentFullscreen()
+            return nil
+        }
     }
 
     @available(*, unavailable)
@@ -323,15 +336,43 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         guard tab.id == state.activeTabID, let window else { return }
         state.contentFullscreen = fullscreen
         updateTrafficLights()
-        let isWindowFullscreen = window.styleMask.contains(.fullScreen)
-        if fullscreen && !isWindowFullscreen {
-            enteredFullscreenForContent = true
-            window.toggleFullScreen(nil)
-        } else if !fullscreen && isWindowFullscreen && enteredFullscreenForContent {
+        if fullscreen {
+            // Only a window that wasn't already full screen goes back afterwards.
+            if !window.styleMask.contains(.fullScreen) && !enteredFullscreenForContent {
+                enteredFullscreenForContent = true
+                setWindowFullscreen(true)
+            }
+        } else if enteredFullscreenForContent {
             enteredFullscreenForContent = false
-            window.toggleFullScreen(nil)
+            setWindowFullscreen(false)
         }
         root.needsLayout = true
+    }
+
+    /// Leaves page fullscreen now. The window follows at once; the engine's own
+    /// notification arrives afterwards and finds nothing left to do.
+    func exitContentFullscreen() {
+        guard let tab = state.activeTab, state.contentFullscreen else { return }
+        tab.webView?.exitContentFullscreen()
+        self.tab(tab, didRequestFullscreen: false)
+    }
+
+    private func setWindowFullscreen(_ on: Bool) {
+        // A hidden test instance never takes over a Space on the user's screen.
+        guard let window, !DebugDriver.isHeadless else { return }
+        if windowFullscreenTransition {
+            pendingWindowFullscreen = on
+        } else if window.styleMask.contains(.fullScreen) != on {
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    private func settleWindowFullscreen() {
+        windowFullscreenTransition = false
+        if let wanted = pendingWindowFullscreen {
+            pendingWindowFullscreen = nil
+            setWindowFullscreen(wanted)
+        }
     }
 
     func tab(_ tab: Tab, requestPermissions kinds: WinkPermissionKinds, origin: String,
@@ -405,7 +446,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
         AppDelegate.shared?.windowDidClose(self)
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) { windowFullscreenTransition = true }
+    func windowWillExitFullScreen(_ notification: Notification) { windowFullscreenTransition = true }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { settleWindowFullscreen() }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) { settleWindowFullscreen() }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        updateTrafficLights()
+        settleWindowFullscreen()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -413,6 +466,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
+        defer { settleWindowFullscreen() }
         if state.contentFullscreen {
             state.contentFullscreen = false
             state.activeTab?.webView?.exitContentFullscreen()

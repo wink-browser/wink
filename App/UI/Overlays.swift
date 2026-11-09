@@ -397,3 +397,44 @@ struct PageFailureView: View {
         .background(Color(nsColor: .textBackgroundColor))
     }
 }
+
+/// "Press esc to exit full screen", shown for a moment when a page goes
+/// full screen (as in Chrome): you always know the way out, and a site can't
+/// pass itself off as your desktop.
+struct FullscreenHintView: View {
+    let state: BrowserWindowState
+    @State private var visible = false
+    @State private var hide: Task<Void, Never>?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Press")
+            Text("esc")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.white.opacity(0.55)))
+            Text("to exit full screen")
+        }
+        .font(.system(size: 13, weight: .medium))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(Capsule().fill(Color.black.opacity(0.66)))
+        .opacity(visible ? 1 : 0)
+        .offset(y: visible ? 0 : -10)
+        .animation(.smooth(duration: 0.3), value: visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 24)
+        .accessibilityHidden(!visible)
+        .onChange(of: state.contentFullscreen) { _, fullscreen in
+            hide?.cancel()
+            visible = fullscreen
+            guard fullscreen else { return }
+            hide = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2.8))
+                if !Task.isCancelled { visible = false }
+            }
+        }
+    }
+}

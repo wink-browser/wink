@@ -238,6 +238,15 @@ final class DebugDriver {
             model.answerHidden = false
         case "winky-running": AgentPanelModel.shared.isRunning.toggle()
         case "import-window": AppDelegate.shared?.showImport(nil)
+        case "escape":
+            // A real Esc key press, through the app's event dispatch.
+            if let nsWindow = window?.window,
+               let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: nsWindow.windowNumber,
+                                            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                            isARepeat: false, keyCode: 53) {
+                NSApp.postEvent(event, atStart: false)
+            }
         case "import-window-start": ImportWindow.startForTesting()
         case "import-preview":
             // Counts only, nothing decrypted: argument picks the source ("chrome"), default the first.
