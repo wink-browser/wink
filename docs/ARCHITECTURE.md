@@ -43,7 +43,7 @@ CEF browsers embedded in a native view use CEF's lightweight *Alloy* runtime sty
 | `App/Browser/` | Tab model (each tab is its Chromium view's delegate), window state and controller |
 | `App/UI/` | Root layout, sidebar, content card + overlays, agent visuals (aurora glow, cursor, page effects), Winky's prompt bar over the page (`WinkyBar.swift`) and welcome (`Welcome.swift`), command bar, menus, settings |
 | `App/Agent/` | `AgentHub` (consent, activity, pause/take-over, Stop), `Guardrails`, `BrowserTools`, `CDPSession`, `PageScripts` (JS), `MCPServer`, `ClaudeAPIEngine`, `ClaudeCodeEngine`, agent panel |
-| `App/Services/` | History (SQLite), favicons, downloads, sessions, tab sleeping, content-blocker settings sync, the daily update check with anonymous counts (`Updates.swift`), importing logins, history and bookmarks from other browsers (`BrowserImport.swift`) |
+| `App/Services/` | History (SQLite), favicons, downloads, sessions, tab sleeping, content-blocker settings sync, updates through Sparkle with the anonymous counts (`Updates.swift`), importing logins, history and bookmarks from other browsers (`BrowserImport.swift`) |
 | `Bridge/` | `wink-mcp`: stdio ⇄ unix-socket relay for MCP clients |
 | `Resources/` | Info.plists, app icon and the cut-out eye (both built from `Brand/wink-eye.jpg` by `make icon`), blocklist (+ NOTICE) |
 | `scripts/` | `bootstrap.sh`, `bundle.sh` (assemble + sign), `release.sh` (Developer ID + notarization + DMG), `update_blocklist.py`, `make_icon.swift` |
@@ -126,6 +126,6 @@ WINK_HOME=/tmp/wink-test WINK_MCP_SOCKET=/tmp/wink-test.sock WINK_DEBUG_DIR=/tmp
 
 1. **Engine.** Widevine for DRM streaming (needs VMP signing through castLabs EVS and Google's approval), and building the codecs engine in Wink's own CI instead of mirroring another project's build. Wink branding in Chromium's strings.
 2. **Fingerprinting defenses** that need Blink patches (canvas/audio/font farbling), and cosmetic filtering.
-3. **Distribution.** Developer ID signing with the hardened runtime (JIT entitlements for the renderer helper), notarization, Sparkle updates, a real Keychain in release builds.
+3. **Distribution.** Delta updates (Sparkle's `BinaryDelta`), so an update doesn't download the whole engine again.
 4. **Agents.** Per-site agent permissions UI, an activity timeline view, agent tabs that render in a live picture-in-picture, MCP resources (tab contents) and notifications, compaction for long built-in conversations.
 5. **Browser.** Extensions, password manager (Keychain-backed), bookmarks/spaces, tab groups, Windows/Linux shells.

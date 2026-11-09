@@ -81,5 +81,23 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Updates (Sparkle). The feed is Wink's own; every update must carry an
+	     EdDSA signature by this key, checked before anything is unpacked. -->
+	<key>SUFeedURL</key>
+	<string>https://wink.minnebo.ai/api/appcast</string>
+	<key>SUPublicEDKey</key>
+	<string>ZkQyhVFdcBBzNxbN3pHUKSHMfDkiZYxDCZLEHUBUoAw=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>14400</integer>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 </dict>
 </plist>

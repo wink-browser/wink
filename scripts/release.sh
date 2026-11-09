@@ -87,6 +87,24 @@ if [[ "${WINK_SKIP_NOTARIZE:-0}" != 1 ]]; then
   spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 fi
 
+# Sparkle: sign the final (stapled) disk image with Wink's EdDSA key, read
+# from the Keychain item "Wink update signing key" (never a file or argv), and
+# write the appcast fields for latest.json on the website.
+step "Signing the update"
+SIGNATURE="$(security find-generic-password -s "Wink update signing key" -a wink-sparkle -w |
+  third_party/sparkle/bin/sign_update --ed-key-file - "$DMG")"
+ED_SIGNATURE="$(sed -nE 's/.*edSignature="([^"]+)".*/\1/p' <<<"$SIGNATURE")"
+LENGTH="$(sed -nE 's/.*length="([0-9]+)".*/\1/p' <<<"$SIGNATURE")"
+[[ -n "$ED_SIGNATURE" && "$LENGTH" == "$(stat -f%z "$DMG")" ]] || { echo "✗ Sparkle signing failed" >&2; exit 1; }
+python3 -I - "$OUT_DIR/Wink-$VERSION.update.json" "$VERSION" "$LENGTH" "$ED_SIGNATURE" <<'PY'
+import json, sys, email.utils
+path, version, length, signature = sys.argv[1:]
+json.dump({"url": f"https://github.com/wink-browser/releases/releases/download/v{version}/Wink.dmg",
+           "length": int(length), "edSignature": signature,
+           "pubDate": email.utils.formatdate(usegmt=True)}, open(path, "w"), indent=2)
+PY
+echo "  appcast fields in $(basename "$OUT_DIR")/Wink-$VERSION.update.json"
+
 (cd "$OUT_DIR" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 step "Done"
 echo "✓ $DMG ($(du -h "$DMG" | cut -f1)), sha256 in $(basename "$DMG").sha256"

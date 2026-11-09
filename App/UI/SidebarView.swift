@@ -403,14 +403,15 @@ struct SidebarFooter: View {
                 .popover(isPresented: $showDownloads, arrowEdge: .top) { DownloadsPopover() }
                 .help("Downloads")
             }
-            if let update = UpdateCenter.shared.available {
-                Button { UpdateCenter.shared.download() } label: {
-                    Image(systemName: "arrow.down.circle.fill")
+            if let version = UpdateCenter.shared.readyVersion {
+                Button { UpdateCenter.shared.installAndRelaunch() } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
                         .font(.system(size: 13))
                         .foregroundStyle(Color(nsColor: Theme.cobaltNS))
                 }
                 .buttonStyle(.plain)
-                .help("Wink \(update.version) is available. Click to download.")
+                .help("Wink \(version) is ready. Click to restart and update; your tabs come back.")
+                .accessibilityLabel("Restart to update to Wink \(version)")
             }
             Button { AppDelegate.shared?.showSettings(nil) } label: {
                 Image(systemName: "gearshape").font(.system(size: 13))

@@ -32,14 +32,14 @@ These run on Chromium's IO thread for every request in the browser process.
 
 ## Updates and anonymous counts
 
-Release builds ask `wink.minnebo.ai` for the newest version once a day, so Wink can offer updates. The request contains:
+Release builds ask `wink.minnebo.ai` for the newest version once a day (Sparkle, `App/Services/Updates.swift`), and update themselves. An update downloads in the background and installs when you quit. It's only accepted if it carries Wink's EdDSA signature, which is checked before anything is unpacked, and Apple's Developer ID signature for the same team. The request contains:
 
 - **Always:** Wink's version and the macOS version (major.minor).
-- **With "Share anonymous usage counts" on** (the default; Settings › Privacy or the welcome screen): whether this is the first check today, this week, this month and ever, plus the week Wink was installed. Those flags let the team count daily, weekly and monthly users, new installs and retention, without identifying anyone.
+- **With "Share anonymous usage counts" on** (the default; Settings › Privacy or the welcome screen), on the first check of each UTC day only: whether this is the first check today, this week, this month and ever, plus the week Wink was installed. Those flags let the team count daily, weekly and monthly users, new installs and retention, without identifying anyone.
 
 What it never contains: an identifier, a cookie, your history, your profile, or anything about the pages you visit.
 
-On the server, the check only increments counters per day, week and month. The country is derived from the request in aggregate, and IP addresses are not stored. Turn off **Check for updates** to send nothing at all. Dev builds never check.
+Sparkle's own system profile is off. On the server, the check only increments counters per day, week and month. The country is derived from the request in aggregate, and IP addresses are not stored. Turn off **Update Wink automatically** to send nothing at all (Wink › Check for Updates… still works when you ask). Dev builds never check.
 
 The website works the same way. It sets no cookies and runs no scripts; it counts page views and download clicks per day (and country), without identifying visitors.
 

@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.29)
 # not enable the OBJCXX language) so CEF's wrapper and our engine share flags.
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
-project(Wink VERSION 0.3.0 LANGUAGES C CXX Swift)
+project(Wink VERSION 0.4.0 LANGUAGES C CXX Swift)
 
 if(NOT APPLE)
   message(FATAL_ERROR "Wink currently targets macOS only.")
@@ -57,6 +57,21 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
 find_package(CEF REQUIRED)
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
+
+# ---------------------------------------------------------------------------
+# Sparkle (updates)
+# ---------------------------------------------------------------------------
+set(SPARKLE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sparkle")
+if(NOT EXISTS "${SPARKLE_ROOT}/Sparkle.framework")
+  message(FATAL_ERROR "Sparkle not found. Run `make bootstrap` first.")
+endif()
+# The version the bundle reports. Only the update test overrides it, to build
+# an "old" and a "new" Wink from the same sources.
+if(WINK_VERSION_OVERRIDE)
+  set(WINK_APP_VERSION "${WINK_VERSION_OVERRIDE}")
+else()
+  set(WINK_APP_VERSION "${PROJECT_VERSION}")
+endif()
 
 # cef_variables.cmake lowers these; restore ours for Wink's own targets.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
@@ -134,7 +149,9 @@ file(GLOB_RECURSE WINK_APP_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/App/*.swift")
 add_executable(Wink ${WINK_APP_SOURCES})
 target_link_libraries(Wink PRIVATE WinkEngine c++ sqlite3)
-target_link_options(Wink PRIVATE "LINKER:-ObjC" "$<$<CONFIG:Release>:LINKER:-dead_strip>")
+target_link_options(Wink PRIVATE "LINKER:-ObjC" "$<$<CONFIG:Release>:LINKER:-dead_strip>"
+  "SHELL:-F ${SPARKLE_ROOT}" "SHELL:-framework Sparkle" "LINKER:-rpath,@executable_path/../Frameworks")
+target_compile_options(Wink PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:-F ${SPARKLE_ROOT}>")
 set_target_properties(Wink PROPERTIES
   Swift_MODULE_NAME WinkBrowser
   Swift_COMPILATION_MODE wholemodule)
@@ -169,8 +186,9 @@ add_custom_target(bundle ALL
           --helper "$<TARGET_FILE:WinkHelper>"
           --bridge "$<TARGET_FILE:wink-mcp>"
           --cef "${CEF_ROOT}/Release"
+          --sparkle "${SPARKLE_ROOT}/Sparkle.framework"
           --resources "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
-          --version "${PROJECT_VERSION}"
+          --version "${WINK_APP_VERSION}"
           --bundle-id "${WINK_BUNDLE_ID}"
   DEPENDS Wink WinkHelper wink-mcp
   COMMENT "Assembling Wink.app"

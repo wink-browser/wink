@@ -8,6 +8,7 @@
 # Third-party binaries fetched by scripts/bootstrap.sh (never committed)
 /third_party/cef/
 /third_party/downloads/
+/third_party/sparkle/
 
 # macOS / editors
 .DS_Store

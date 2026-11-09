@@ -11,6 +11,7 @@ while [[ $# -gt 0 ]]; do
     --helper) HELPER_BIN="$2"; shift 2 ;;
     --bridge) BRIDGE_BIN="$2"; shift 2 ;;
     --cef) CEF_RELEASE="$2"; shift 2 ;;
+    --sparkle) SPARKLE_FRAMEWORK="$2"; shift 2 ;;
     --resources) RES="$2"; shift 2 ;;
     --version) VERSION="$2"; shift 2 ;;
     --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
@@ -84,6 +85,19 @@ if [[ ! -d "$FW/Versions/A" || "$(cat "$STAMP_FILE" 2>/dev/null)" != "$ENGINE_ST
   ln -sfn "Versions/A/Resources" "$FW/Resources"
 fi
 
+# --- Sparkle (updates) ----------------------------------------------------------
+# Copied with its symlinks, without the XPC services (only sandboxed apps
+# need them), and re-signed below when its version or the identity changes.
+SPK="$FRAMEWORKS/Sparkle.framework"
+SPARKLE_STAMP="$(cat "$SPARKLE_FRAMEWORK/../.wink-sparkle-version" 2>/dev/null || echo unknown)/$SIGN_IDENTITY"
+SPARKLE_STAMP_FILE="$(dirname "$OUT")/.wink-sparkle-stamp"
+SPARKLE_CHANGED=0
+if [[ ! -d "$SPK/Versions/B" || "$(cat "$SPARKLE_STAMP_FILE" 2>/dev/null)" != "$SPARKLE_STAMP" ]]; then
+  SPARKLE_CHANGED=1
+  rm -rf "$SPK"
+  rsync -a --exclude "XPCServices" --exclude "_CodeSignature/" "$SPARKLE_FRAMEWORK/" "$SPK/"
+fi
+
 # --- Helper apps (one per Chromium process type) -----------------------------
 HELPERS_CHANGED=0
 for spec in ":" " (Alerts):.alerts" " (GPU):.gpu" " (Plugin):.plugin" " (Renderer):.renderer"; do
@@ -125,6 +139,12 @@ if [[ "$FRAMEWORK_CHANGED" == 1 ]]; then
   sign "$FW/Versions/A/Libraries/"*.dylib
   sign "$FW"
   echo "$ENGINE_STAMP" > "$STAMP_FILE"
+fi
+if [[ "$SPARKLE_CHANGED" == 1 ]]; then
+  sign "$SPK/Versions/B/Autoupdate"
+  sign "$SPK/Versions/B/Updater.app"
+  sign "$SPK"
+  echo "$SPARKLE_STAMP" > "$SPARKLE_STAMP_FILE"
 fi
 # Helpers are re-signed only when they (or the identity) changed, so
 # renderers of a running Wink never see their executables touched.

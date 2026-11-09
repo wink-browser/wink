@@ -43,7 +43,22 @@ cp build-release/dist/Wink-$v.dmg Wink.dmg && shasum -a 256 Wink.dmg > Wink.dmg.
 gh release create v$v --repo wink-browser/releases --title "Wink $v" --notes-file notes.md Wink.dmg Wink.dmg.sha256
 ```
 
-Then tell installed copies about it. The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) serves `latest.json`, which Wink's daily update check reads. Bump its `version`, commit, and deploy with `vercel deploy --prod`. The Download button needs no change: it always points at `releases/latest/download/Wink.dmg`.
+Then tell installed copies about it. The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) serves both update checks from `latest.json`:
+
+- `/api/appcast` is the Sparkle feed of Wink 0.4 and later. It offers a release only when `latest.json` has its `sparkle` fields. Copy them from `build-release/dist/Wink-<version>.update.json`, which `release.sh` writes after signing the DMG. Add `notesHTML`, the short notes Sparkle shows.
+- `/api/ping` serves 0.3 and earlier, which tell the user and link to the download.
+
+Bump `version` and `notes`, replace `sparkle`, commit, and deploy with `vercel deploy --prod`. The Download button needs no change: it always points at `releases/latest/download/Wink.dmg`. The feed must name the version's own URL (`releases/download/v<version>/Wink.dmg`), because its signature covers exactly that file.
+
+## The update signing key
+
+Sparkle verifies every update with the EdDSA public key in `Resources/Info.plist.in` (`SUPublicEDKey`). `release.sh` signs with the private key in the login Keychain item **Wink update signing key** (account `wink-sparkle`), which `security` reads without a prompt. Sparkle's own copy is under account `wink-browser`. Keep a backup somewhere safe, such as a password manager:
+
+```sh
+third_party/sparkle/bin/generate_keys --account wink-browser -x ~/Desktop/wink-update-key   # then store it and delete the file
+```
+
+If the key is lost, installed copies can't verify new updates and must download the next release by hand.
 
 ## Updating the engine
 

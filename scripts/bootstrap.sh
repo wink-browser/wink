@@ -15,6 +15,30 @@ DOWNLOADS="$THIRD_PARTY/downloads"
 DEST="$THIRD_PARTY/cef"
 STAMP="$DEST/.wink-engine-version"
 
+# --- Sparkle (updates) ---------------------------------------------------------
+SPARKLE_DEST="$THIRD_PARTY/sparkle"
+if [[ "$(cat "$SPARKLE_DEST/.wink-sparkle-version" 2>/dev/null)" != "$SPARKLE_VERSION" ]]; then
+  SPARKLE_ARCHIVE="$DOWNLOADS/Sparkle-$SPARKLE_VERSION.tar.xz"
+  mkdir -p "$DOWNLOADS"
+  if [[ ! -f "$SPARKLE_ARCHIVE" ]]; then
+    echo "↓ Downloading Sparkle $SPARKLE_VERSION"
+    curl --fail --location --silent --show-error -o "$SPARKLE_ARCHIVE.partial" \
+      "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+    mv "$SPARKLE_ARCHIVE.partial" "$SPARKLE_ARCHIVE"
+  fi
+  if [[ "$(shasum -a 256 "$SPARKLE_ARCHIVE" | awk '{print $1}')" != "$SPARKLE_SHA256" ]]; then
+    echo "error: sha256 mismatch for Sparkle-$SPARKLE_VERSION.tar.xz" >&2
+    rm -f "$SPARKLE_ARCHIVE"
+    exit 1
+  fi
+  rm -rf "$SPARKLE_DEST"
+  mkdir -p "$SPARKLE_DEST"
+  tar -xJf "$SPARKLE_ARCHIVE" -C "$SPARKLE_DEST" Sparkle.framework bin LICENSE
+  echo "$SPARKLE_VERSION" > "$SPARKLE_DEST/.wink-sparkle-version"
+  echo "✓ Sparkle $SPARKLE_VERSION ready at third_party/sparkle"
+fi
+
+# --- Chromium engine -----------------------------------------------------------
 ARCH="$(uname -m)"
 case "$ARCH" in
   arm64)  PLATFORM="macosarm64"; FLAVOR="codecs";   HASH="sha256:$CEF_SHA256_MACOSARM64" ;;

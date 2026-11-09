@@ -238,6 +238,10 @@ final class DebugDriver {
             model.answerHidden = false
         case "winky-running": AgentPanelModel.shared.isRunning.toggle()
         case "import-window": AppDelegate.shared?.showImport(nil)
+        case "update-check": UpdateCenter.shared.checkInBackground()
+        case "update-state":
+            try? "updates: \(UpdateCenter.shared.debugSummary) version=\(UpdateCenter.appVersion)"
+                .write(to: directory!.appendingPathComponent("update.txt"), atomically: true, encoding: .utf8)
         case "escape":
             // A real Esc key press, through the app's event dispatch.
             if let nsWindow = window?.window,

@@ -97,13 +97,14 @@ struct PrivacySettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Toggle("Check for updates once a day", isOn: $settings.checkForUpdates)
+                Toggle("Update Wink automatically", isOn: $settings.checkForUpdates)
+                    .onChange(of: settings.checkForUpdates) { UpdateCenter.shared.applySettings() }
                 Toggle("Share anonymous usage counts", isOn: $settings.shareUsageCounts)
                     .disabled(!settings.checkForUpdates)
             } header: {
                 Text("Updates")
             } footer: {
-                Text("The daily check sends Wink's version and your macOS version. With usage counts on, it also says whether this is your first check today, this week or this month. No identifier, history or profile detail is ever sent.")
+                Text("Once a day Wink asks wink.minnebo.ai for the newest version, sending only Wink's and macOS's version. Updates are signed, verified, and installed when you quit. With usage counts on, the first check each day also says whether it's your first today, this week or this month. No identifier, history or profile detail is ever sent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("History") {

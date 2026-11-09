@@ -16,3 +16,8 @@ CEF_SHA256_MACOSARM64="07b59a4f81f1b3bab03648bee19468293b01ef103afa7e4cbca663c15
 # Index of builds: https://cef-builds.spotifycdn.com/index.html
 CEF_CDN="https://cef-builds.spotifycdn.com"
 CEF_SHA1_MACOSX64="f0f47aa3cdefa7eea54f2e8c6e73c68b4db125f3"
+
+# Sparkle, the update framework (https://sparkle-project.org). Not signed by
+# its authors for our use: bundle.sh re-signs it with Wink's identity.
+SPARKLE_VERSION="2.10.1"
+SPARKLE_SHA256="1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27"

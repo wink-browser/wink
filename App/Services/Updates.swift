@@ -1,36 +1,37 @@
 import AppKit
 import Observation
 import Security
+import Sparkle
 
-/// Once a day Wink asks wink.minnebo.ai for the newest version, so it can
-/// offer updates. Unless the user switches "Share anonymous usage counts"
-/// off, the same request carries a few anonymous flags (first check today /
-/// this week / this month / ever, the install week, app and macOS version)
-/// that let the founder count active installs. No identifier, browsing data
-/// or profile detail is ever sent, and nothing is sent from dev builds.
+/// Keeps Wink up to date, with Sparkle. Release builds ask wink.minnebo.ai for
+/// the newest version once a day (on the first launch of each UTC day, and
+/// daily while open). An update downloads in the background, is verified
+/// (Wink's EdDSA signature and Apple's code signature) and installs when Wink
+/// quits; the sidebar offers "Restart to update" in the meantime.
+///
+/// Unless "Share anonymous usage counts" is off, the first check of each UTC
+/// day adds a few anonymous flags to that request (first check today / this
+/// week / this month / ever, the install week, app and macOS version) so the
+/// founder can count active installs. No identifier, browsing data or profile
+/// detail is ever sent, and dev builds never check.
 @MainActor
 @Observable
-final class UpdateCenter {
+final class UpdateCenter: NSObject {
     static let shared = UpdateCenter()
 
-    struct Release: Decodable, Equatable {
-        let version: String
-        let url: String
-        let notes: String?
-    }
+    /// A downloaded, verified update waiting to install (the sidebar shows it).
+    private(set) var readyVersion: String?
 
-    /// A newer release than the running one, once a check found it.
-    private(set) var available: Release?
-    private(set) var lastChecked: Date?
-
+    @ObservationIgnored private var controller: SPUStandardUpdaterController?
+    @ObservationIgnored private var installNow: (() -> Void)?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let defaults = UserDefaults.standard
-
-    static let endpoint = URL(string: "https://wink.minnebo.ai/api/ping")!
+    /// What the request in flight counted, recorded once the feed has loaded.
+    @ObservationIgnored private var counting: (day: String, week: String, month: String, installWeek: String)?
 
     static let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 
-    /// Only Developer ID–signed builds check in; ad-hoc dev builds stay silent
+    /// Only Developer ID–signed builds update; ad-hoc dev builds stay silent
     /// (WINK_UPDATE_TEST=1 overrides for testing).
     static let isReleaseBuild: Bool = {
         if ProcessInfo.processInfo.environment["WINK_UPDATE_TEST"] == "1" { return true }
@@ -44,90 +45,104 @@ final class UpdateCenter {
         return dictionary[kSecCodeInfoTeamIdentifier as String] is String
     }()
 
+    /// Test hook: the update test serves its own feed (only with the debug driver).
+    private static let testFeed: String? = {
+        let env = ProcessInfo.processInfo.environment
+        return env["WINK_DEBUG_DIR"] != nil ? env["WINK_UPDATE_FEED"] : nil
+    }()
+
+    var isActive: Bool { controller != nil }
+
     func start() {
-        guard Self.isReleaseBuild, !DebugDriver.isHeadless || ProcessInfo.processInfo.environment["WINK_UPDATE_TEST"] == "1" else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.checkIfDue() }
+        let testing = ProcessInfo.processInfo.environment["WINK_UPDATE_TEST"] == "1"
+        guard Self.isReleaseBuild, !DebugDriver.isHeadless || testing, controller == nil else { return }
+        let controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
+        self.controller = controller
+        applySettings()
+        controller.startUpdater()
+        // Sparkle checks every 24 hours; the first launch of a new UTC day
+        // checks too, so each day Wink is used is counted once.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.checkIfNewDay() }
         timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkIfDue() }
+            MainActor.assumeIsolated { self?.checkIfNewDay() }
         }
         timer?.tolerance = 300
     }
 
-    /// At most one request per UTC day, unless `force` (the menu command).
-    func checkIfDue(force: Bool = false, completion: ((Release?) -> Void)? = nil) {
-        guard force || WinkSettings.shared.checkForUpdates else { completion?(nil); return }
-        let now = Date()
-        let day = Self.utcDay(now)
-        if !force && defaults.string(forKey: "updates.lastDay") == day { completion?(available); return }
-
-        var items = [URLQueryItem(name: "v", value: Self.appVersion),
-                     URLQueryItem(name: "os", value: Self.macOSVersion)]
-        let counted = WinkSettings.shared.shareUsageCounts && !force
-        let week = Self.isoWeek(now)
-        let month = String(day.prefix(7))
-        let installWeek = defaults.string(forKey: "updates.installWeek") ?? week
-        if counted {
-            items += [
-                URLQueryItem(name: "c", value: "1"),
-                URLQueryItem(name: "d", value: "1"),
-                URLQueryItem(name: "w", value: defaults.string(forKey: "updates.countedWeek") == week ? "0" : "1"),
-                URLQueryItem(name: "m", value: defaults.string(forKey: "updates.countedMonth") == month ? "0" : "1"),
-                URLQueryItem(name: "f", value: defaults.bool(forKey: "updates.countedEver") ? "0" : "1"),
-                URLQueryItem(name: "woi", value: installWeek),
-            ]
-        } else {
-            items.append(URLQueryItem(name: "c", value: "0"))
-        }
-        var components = URLComponents(url: Self.endpoint, resolvingAgainstBaseURL: false)!
-        components.queryItems = items
-        var request = URLRequest(url: components.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.setValue("Wink/\(Self.appVersion)", forHTTPHeaderField: "User-Agent")
-
-        let session = URLSession(configuration: .ephemeral)  // no cookies, no cache
-        session.dataTask(with: request) { data, response, _ in
-            let release = (response as? HTTPURLResponse)?.statusCode == 200
-                ? data.flatMap { try? JSONDecoder().decode(Release.self, from: $0) } : nil
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let release else { completion?(nil); return }
-                    self.lastChecked = Date()
-                    if !force { self.defaults.set(day, forKey: "updates.lastDay") }  // a manual check never uses up the daily one
-                    if self.defaults.string(forKey: "updates.installWeek") == nil {
-                        self.defaults.set(installWeek, forKey: "updates.installWeek")
-                    }
-                    if counted {
-                        self.defaults.set(week, forKey: "updates.countedWeek")
-                        self.defaults.set(month, forKey: "updates.countedMonth")
-                        self.defaults.set(true, forKey: "updates.countedEver")
-                    }
-                    self.available = Self.isNewer(release.version, than: Self.appVersion) ? release : nil
-                    completion?(release)
-                }
-            }
-        }.resume()
+    /// Settings › Privacy › Updates.
+    func applySettings() {
+        guard let updater = controller?.updater else { return }
+        let on = WinkSettings.shared.checkForUpdates
+        updater.automaticallyChecksForUpdates = on
+        updater.automaticallyDownloadsUpdates = on
     }
 
-    /// Wink › Check for Updates…
+    /// Wink › Check for Updates…: Sparkle's window, with progress and notes.
     func checkNow() {
-        checkIfDue(force: true) { release in
-            let alert = NSAlert()
-            if let release, Self.isNewer(release.version, than: Self.appVersion) {
-                alert.messageText = "Wink \(release.version) is available"
-                alert.informativeText = "You have \(Self.appVersion). Download the new version and drag it to Applications."
-                alert.addButton(withTitle: "Download")
-                alert.addButton(withTitle: "Later")
-                if alert.runModal() == .alertFirstButtonReturn { self.download() }
-            } else {
-                alert.messageText = release == nil ? "Couldn't check for updates" : "Wink is up to date"
-                alert.informativeText = release == nil ? "Check your connection and try again." : "You have the newest version, \(Self.appVersion)."
-                alert.runModal()
-            }
+        if let controller {
+            controller.checkForUpdates(nil)
+            return
         }
+        let alert = NSAlert()
+        alert.messageText = "This build doesn't update itself"
+        alert.informativeText = "Development builds of Wink don't check for updates. The release from wink.minnebo.ai does."
+        alert.runModal()
     }
 
-    func download() {
-        guard let url = URL(string: available?.url ?? "https://wink.minnebo.ai/download") else { return }
-        NSWorkspace.shared.open(url)
+    /// The sidebar's "Restart to update": installs now and reopens Wink.
+    func installAndRelaunch() {
+        installNow?()
+    }
+
+    /// A quiet check, as the schedule makes (also used by the debug driver).
+    func checkInBackground() {
+        guard let updater = controller?.updater, !updater.sessionInProgress else { return }
+        updater.checkForUpdatesInBackground()
+    }
+
+    var debugSummary: String {
+        "active=\(isActive) ready=\(readyVersion ?? "-") checkedDay=\(defaults.string(forKey: "updates.checkedDay") ?? "-")"
+    }
+
+    private func checkIfNewDay() {
+        guard WinkSettings.shared.checkForUpdates, defaults.string(forKey: "updates.checkedDay") != Self.utcDay(Date()) else { return }
+        checkInBackground()
+    }
+
+    /// The query items added to the feed request.
+    private func feedQuery() -> [(String, String)] {
+        let now = Date()
+        let day = Self.utcDay(now), week = Self.isoWeek(now), month = String(day.prefix(7))
+        var items = [("v", Self.appVersion), ("os", Self.macOSVersion)]
+        // 0.3 and earlier recorded the day of their (counted) daily ping as lastDay.
+        let countedDay = defaults.string(forKey: "updates.countedDay") ?? defaults.string(forKey: "updates.lastDay")
+        guard WinkSettings.shared.shareUsageCounts, countedDay != day else {
+            counting = nil
+            return items + [("c", "0")]
+        }
+        let installWeek = defaults.string(forKey: "updates.installWeek") ?? week
+        counting = (day, week, month, installWeek)
+        return items + [
+            ("c", "1"),
+            ("d", "1"),
+            ("w", defaults.string(forKey: "updates.countedWeek") == week ? "0" : "1"),
+            ("m", defaults.string(forKey: "updates.countedMonth") == month ? "0" : "1"),
+            ("f", defaults.bool(forKey: "updates.countedEver") ? "0" : "1"),
+            ("woi", installWeek),
+        ]
+    }
+
+    private func feedLoaded() {
+        defaults.set(Self.utcDay(Date()), forKey: "updates.checkedDay")
+        guard let counted = counting else { return }
+        counting = nil
+        defaults.set(counted.day, forKey: "updates.countedDay")
+        defaults.set(counted.week, forKey: "updates.countedWeek")
+        defaults.set(counted.month, forKey: "updates.countedMonth")
+        defaults.set(true, forKey: "updates.countedEver")
+        if defaults.string(forKey: "updates.installWeek") == nil {
+            defaults.set(counted.installWeek, forKey: "updates.installWeek")
+        }
     }
 
     // MARK: - Helpers
@@ -152,14 +167,30 @@ final class UpdateCenter {
         let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
     }
+}
 
-    static func isNewer(_ candidate: String, than current: String) -> Bool {
-        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
-        let b = current.split(separator: ".").map { Int($0) ?? 0 }
-        for i in 0..<max(a.count, b.count) {
-            let x = i < a.count ? a[i] : 0, y = i < b.count ? b[i] : 0
-            if x != y { return x > y }
+// Sparkle calls its delegate on the main thread.
+extension UpdateCenter: SPUUpdaterDelegate {
+    nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
+        Self.testFeed
+    }
+
+    nonisolated func feedParameters(for updater: SPUUpdater, sendingSystemProfile: Bool) -> [[String: String]] {
+        MainActor.assumeIsolated { feedQuery().map { ["key": $0.0, "value": $0.1] } }
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
+        MainActor.assumeIsolated { feedLoaded() }
+    }
+
+    /// A downloaded update waits for quit; the sidebar offers to install it now.
+    nonisolated func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                             immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        let version = item.displayVersionString
+        MainActor.assumeIsolated {
+            readyVersion = version
+            installNow = immediateInstallHandler
         }
-        return false
+        return true
     }
 }
