@@ -29,6 +29,7 @@ Wink embeds Chromium through CEF (the Chromium Embedded Framework) instead of fo
 - **Real Chromium.** Blink, V8, Chromium's network stack, site isolation and the multi-process sandbox are unchanged. Sites behave as they do in Chrome, and Wink presents a standard Chrome user agent.
 - **Native UI.** The browser chrome is AppKit and SwiftUI, not a web UI or Chromium's Views toolkit. It's cheap to render and feels like a Mac app.
 - **Buildable anywhere.** The engine is a pinned, checksum-verified binary (`engine.lock`, `make bootstrap`). A Chromium fork needs about 100 GB of checkout and hours per build.
+- **With the codecs sites expect.** Official CEF builds leave out H.264, AAC and HEVC, so Instagram, X and most video wouldn't play. On Apple silicon Wink uses CEF built from source with `proprietary_codecs=true ffmpeg_branding=Chrome`, at exactly the version in `engine.lock`. It comes from the public GitHub Actions workflow `cef-codecs.yml` of [dpfaffenbauer/OpenArch](https://github.com/dpfaffenbauer/OpenArch) (MIT), which builds CEF's and Chromium's own sources with only CEF's patches on GitHub-hosted runners. The archive is mirrored as a release of this repository (`engine-<version>-codecs`) and pinned by SHA-256. Before it was adopted, its headers, wrapper sources and file list were compared with the official distribution of the same version. They matched except for formatting. H.264, HEVC and AAC are patent-licensed. Chromium-based browsers ship them, but review the AVC, HEVC and AAC pool terms before Wink ships at scale.
 - **Swappable.** Swift only sees the Objective-C facade in `Engine/include/WinkEngine`. Moving to a source-built CEF, or to a full Chromium fork, changes `Engine/` but not the app.
 
 CEF browsers embedded in a native view use CEF's lightweight *Alloy* runtime style. Wink provides its own UI for tabs, dialogs, permissions, and popups.
@@ -123,7 +124,7 @@ WINK_HOME=/tmp/wink-test WINK_MCP_SOCKET=/tmp/wink-test.sock WINK_DEBUG_DIR=/tmp
 
 ## Roadmap
 
-1. **Source-built engine.** Build CEF from source with `proprietary_codecs=true ffmpeg_branding="Chrome"` for H.264/AAC. Add Widevine (requires VMP signing) and Wink branding in Chromium's strings.
+1. **Engine.** Widevine for DRM streaming (needs VMP signing through castLabs EVS and Google's approval), and building the codecs engine in Wink's own CI instead of mirroring another project's build. Wink branding in Chromium's strings.
 2. **Fingerprinting defenses** that need Blink patches (canvas/audio/font farbling), and cosmetic filtering.
 3. **Distribution.** Developer ID signing with the hardened runtime (JIT entitlements for the renderer helper), notarization, Sparkle updates, a real Keychain in release builds.
 4. **Agents.** Per-site agent permissions UI, an activity timeline view, agent tabs that render in a live picture-in-picture, MCP resources (tab contents) and notifications, compaction for long built-in conversations.

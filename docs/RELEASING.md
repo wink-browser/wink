@@ -45,6 +45,20 @@ gh release create v$v --repo wink-browser/releases --title "Wink $v" --notes-fil
 
 Then tell installed copies about it. The website ([wink.minnebo.ai](https://wink.minnebo.ai), repository `wink-browser/website`, hosted on Vercel) serves `latest.json`, which Wink's daily update check reads. Bump its `version`, commit, and deploy with `vercel deploy --prod`. The Download button needs no change: it always points at `releases/latest/download/Wink.dmg`.
 
+## Updating the engine
+
+`engine.lock` pins CEF. On Apple silicon it is a build with proprietary codecs (see [Architecture](ARCHITECTURE.md#why-cef--a-native-shell)), so a new CEF version takes three steps:
+
+1. Get a codecs build of exactly that version from a source you've vetted: a run of a public build workflow whose script you've read, or your own build.
+2. Check it against the official distribution of the same version. `include/` and `libcef_dll/` must match apart from formatting, and so must the `Release/` file list.
+3. Mirror it as a release of this repository, then update `CEF_VERSION`, `CHROMIUM_VERSION`, `ENGINE_RELEASE` and `CEF_SHA256_MACOSARM64` together:
+
+   ```sh
+   gh release create engine-<version>-codecs --repo wink-browser/wink --latest=false cef_binary_*.tar.bz2 cef_binary_*.tar.bz2.sha256
+   ```
+
+`make bootstrap` then fetches it with `gh` and verifies the SHA-256.
+
 ## Before shipping
 
 - **Launch the signed app.** Hardened-runtime problems show up as helper processes failing to start: blank pages or a crashed renderer.

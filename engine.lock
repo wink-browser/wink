@@ -1,7 +1,18 @@
-# Pinned Chromium engine (CEF binary distribution). Update all values together.
-# Index of builds: https://cef-builds.spotifycdn.com/index.html
+# Pinned Chromium engine (CEF minimal binary distribution). Update all values together.
 CEF_VERSION="156.0.26+g8ea0c73+chromium-156.0.8078.88"
 CHROMIUM_VERSION="156.0.8078.88"
+
+# Apple silicon: CEF built from source with the proprietary codecs (H.264, AAC,
+# HEVC) the official builds leave out, so Instagram, X and most video plays.
+# Built by the public workflow cef-codecs.yml of dpfaffenbauer/OpenArch (MIT,
+# run 42450804072) from CEF's and Chromium's own sources at exactly this
+# version, and mirrored as a release asset of this repository. Fetched with
+# `gh` (the repository is private). See docs/ARCHITECTURE.md › Engine.
+ENGINE_REPO="wink-browser/wink"
+ENGINE_RELEASE="engine-156.0.26-codecs"
+CEF_SHA256_MACOSARM64="07b59a4f81f1b3bab03648bee19468293b01ef103afa7e4cbca663c15c1e3176"
+
+# Intel (development builds only): the official build, without those codecs.
+# Index of builds: https://cef-builds.spotifycdn.com/index.html
 CEF_CDN="https://cef-builds.spotifycdn.com"
-CEF_SHA1_MACOSARM64="ca4fafe7a9c52d9f28200bb8713971a9662b891c"
 CEF_SHA1_MACOSX64="f0f47aa3cdefa7eea54f2e8c6e73c68b4db125f3"

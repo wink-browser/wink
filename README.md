@@ -70,4 +70,4 @@ Then ask Claude Code things like *"open localhost:3000 in Wink, click through th
 
 ## Status
 
-Wink is an early build. See the roadmap in [Architecture](docs/ARCHITECTURE.md#roadmap). Notably, the stock CEF binaries ship without proprietary codecs (H.264/AAC) or Widevine; that needs a source build of the engine.
+Wink is an early build. See the roadmap in [Architecture](docs/ARCHITECTURE.md#roadmap). Video plays in H.264, AAC and HEVC (the engine is built with Chromium's proprietary codecs). DRM-protected streaming (Netflix, Spotify, Disney+) needs Widevine, which isn't in yet.
