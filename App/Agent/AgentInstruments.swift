@@ -38,7 +38,7 @@ final class AgentInstruments {
     /// Steps an agent took in this tab, per agent session.
     struct Step {
         enum Kind { case goto, click, doubleClick, fill, press, select, hover, check, uncheck, upload, dragTo,
-                    back, forward, reload, dialog, viewport, media }
+                    back, forward, reload, dialog, viewport, media, route, offline, storage, pdf }
         let kind: Kind
         var locator: [String: Any]
         var value: String
@@ -49,9 +49,13 @@ final class AgentInstruments {
 
     var emulating = false
     var userAgent: String?
+    let mocks: NetworkMocks
+    let recorder: TabRecorder
 
     init(tab: Tab) {
         self.tab = tab
+        mocks = NetworkMocks(tab: tab)
+        recorder = TabRecorder(tab: tab)
     }
 
     /// The DevTools session was reset (tab slept or its browser restarted).
@@ -84,6 +88,7 @@ final class AgentInstruments {
             }
         }
         _ = try? await cdp.send("Network.enable", ["maxResourceBufferSize": 4_000_000, "maxTotalBufferSize": 24_000_000])
+        await mocks.restore()
     }
     private var listening = false
 
@@ -239,6 +244,10 @@ enum PlaywrightExport {
             case .dialog: line = nil
             case .viewport: line = "await page.setViewportSize({ \(step.value) });"
             case .media: line = "await page.emulateMedia({ \(step.value) });"
+            case .route: line = step.value
+            case .offline: line = "await page.context().setOffline(\(step.value));"
+            case .storage: line = step.value
+            case .pdf: line = "await page.pdf({ path: \(quote(step.value)) });"
             }
             if let line { lines.append(line) }
             if step.kind != .fill { lastFill = nil }

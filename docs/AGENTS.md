@@ -61,6 +61,10 @@ No TCP port is opened, so web pages can't reach the server through DNS rebinding
 | `console_logs`, `network_requests` | Page errors and requests, failed and blocked ones included; `url` shows one request with headers and bodies |
 | `evaluate` | Run JavaScript; always on localhost, elsewhere only if the user enables it |
 | `emulate` | Phone, tablet or custom viewport, dark mode, reduced motion |
+| `mock_network` | Make requests return a given status and body, fail them, or take the tab offline |
+| `storage` | Cookies, localStorage and sessionStorage: get, set, delete, clear (values hidden outside localhost) |
+| `save_pdf`, `record` | Save the page as a PDF, or record the tab as an H.264 video, in Downloads |
+| `verify` | Check text, or an element's state, value or visibility, on the live page |
 | `export_test` | The agent's steps in a tab as a Playwright test, with checks verified on the live page |
 
 A typical loop: `tab_open` → `find` → `click`/`type` by ref, reading each action's report → `batch` for the repetitive part. Refs live in Wink's isolated JavaScript world and remember their element's role and name, so when a framework re-renders a list, the ref follows its element instead of going stale.
@@ -81,7 +85,10 @@ A model turn costs seconds; a tool call costs milliseconds. So Wink spends its e
 - **Localhost is a workbench.** On `localhost`, `127.0.0.1` and `*.test`, `evaluate` is always allowed and the "wants to send / delete" prompts don't apply: it's your own app.
 - **See the whole request.** `network_requests` with `url` shows one request in full: request and response headers (cookies and authorization hidden) and bodies.
 - **Check every size.** `emulate` shows the agent's tab as an iPhone, iPad or Android phone, at any viewport, in dark mode or with reduced motion.
-- **Keep what the agent found as a test.** `export_test` turns the agent's steps in a tab into a Playwright test that uses role-based locators, with the agent's checks verified on the live page before they're written. Explore with an agent in your real browser, then run the test in CI with Playwright.
+- **Bend the network.** `mock_network` makes an API answer with any status and body, fails requests, or takes the tab offline, in that tab only. Only matching requests are intercepted.
+- **Look at what's stored.** `storage` reads and changes cookies, localStorage and sessionStorage. Outside localhost, values stay hidden (they can be session tokens), and changing them needs your OK.
+- **Show your work.** `save_pdf` and `record` (an H.264 movie, from screenshots, so it works for tabs in the background) save to Downloads; `verify` checks the live page.
+- **Keep what the agent found as a test.** `export_test` turns the agent's steps in a tab into a Playwright test that uses role-based locators, with the agent's checks verified on the live page before they're written. Mocks, offline mode, storage changes, dialogs, uploads and drags come along. Explore with an agent in your real browser, then run the test in CI with Playwright, in Chromium, Firefox and WebKit.
 
 ### Keeps working while you're away
 

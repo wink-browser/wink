@@ -211,6 +211,28 @@ enum BrowserTools {
                            "reduced_motion": prop("boolean", "Prefer reduced motion."),
                            "reset": prop("boolean", "Back to normal."), "tab_id": tabID],
               required: [], readOnly: false),
+        .init(name: "mock_network",
+              description: "In your tab: make requests whose URL contains url return status/body (or fail with block:true), go offline, or clear:true every mock.",
+              properties: ["url": prop("string", "Part of the URL; * matches anything."),
+                           "status": prop("integer", "Status (default 200)."), "body": prop("string", "Response body."),
+                           "content_type": prop("string", "Default application/json."), "block": prop("boolean", "Fail the request instead."),
+                           "offline": prop("boolean", "Take the tab offline (or back online)."),
+                           "clear": prop("boolean", "Remove all mocks."), "tab_id": tabID],
+              required: [], readOnly: false),
+        .init(name: "storage",
+              description: "The page's cookies, localStorage and sessionStorage: get (default), set, delete or clear. Values outside localhost stay hidden.",
+              properties: ["action": ["type": "string", "enum": ["get", "set", "delete", "clear"]],
+                           "kind": ["type": "string", "enum": ["cookies", "local", "session"]],
+                           "name": prop("string", "Key or cookie name."), "value": prop("string", "Value to set."), "tab_id": tabID],
+              required: [], readOnly: false),
+        .init(name: "save_pdf", description: "Save the page as a PDF in Downloads; returns its path.",
+              properties: ["tab_id": tabID], required: [], readOnly: false),
+        .init(name: "record", description: "Video of the tab: start, then stop to get the .mp4 (saved in Downloads).",
+              properties: ["action": ["type": "string", "enum": ["start", "stop"]], "tab_id": tabID],
+              required: ["action"], readOnly: false),
+        .init(name: "verify", description: "Check the live page: each expect passes or fails (text on the page, or a ref checked, with a value, or visible).",
+              properties: ["expect": ["type": "array", "items": expectSchema, "description": "Checks."], "tab_id": tabID],
+              required: ["expect"], readOnly: true),
         .init(name: "export_test",
               description: "Turn the steps you took in this tab into a Playwright test (TypeScript), with expect checks verified on the live page first. Save it with your own file tools.",
               properties: ["name": prop("string", "Test name."),
@@ -268,6 +290,11 @@ enum BrowserTools {
         case "handle_dialog": "exclamationmark.bubble"
         case "emulate": "iphone"
         case "export_test": "checkmark.seal"
+        case "mock_network": "arrow.left.arrow.right"
+        case "storage": "tray.full"
+        case "save_pdf": "doc.richtext"
+        case "record": "record.circle"
+        case "verify": "checkmark.circle"
         case "tabs_list", "get_active_tab": "square.on.square"
         default: "sparkle"
         }
@@ -301,6 +328,11 @@ enum BrowserTools {
             case "handle_dialog": return try await handleDialog(args, session)
             case "emulate": return try await emulate(args, session)
             case "export_test": return try await exportTest(args, session)
+            case "mock_network": return try await mockNetwork(args, session)
+            case "storage": return try await storage(args, session)
+            case "save_pdf": return try await savePDF(args, session)
+            case "record": return try await record(args, session)
+            case "verify": return try await verify(args, session)
             case "wait_for": return try await waitFor(args, session)
             case "get_selection": return try await getSelection(args, session)
             case "console_logs": return try await consoleLogs(args, session)
@@ -1402,6 +1434,193 @@ enum BrowserTools {
         let code = PlaywrightExport.code(name: name, steps: steps, assertions: assertions)
         let actions = steps.filter { $0.kind != .goto && $0.kind != .dialog }.count
         return .text("Playwright test from \(actions) step\(actions == 1 ? "" : "s") and \(assertions.count) check\(assertions.count == 1 ? "" : "s") (verified on the live page). Save it as tests/<name>.spec.ts and run npx playwright test.\n\n```ts\n\(code)\n```")
+    }
+
+    // MARK: - Network mocks, storage, PDF, recording, checks
+
+    private static func mockNetwork(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "control")
+        let mocks = tab.instruments.mocks
+        var lines: [String] = []
+        return try await run(session, tab, "Changing the network", symbol: symbol(for: "mock_network")) {
+            if bool(args, "clear") == true {
+                try await mocks.clear()
+                lines.append("Removed every mock.")
+                tab.instruments.record(.init(kind: .route, locator: [:], value: "await page.unrouteAll();"), session: session)
+            }
+            if let offline = bool(args, "offline") {
+                try await mocks.setOffline(offline)
+                lines.append(offline ? "The tab is offline." : "The tab is back online.")
+                tab.instruments.record(.init(kind: .offline, locator: [:], value: offline ? "true" : "false"), session: session)
+            }
+            if let url = string(args, "url") {
+                let block = bool(args, "block") ?? false
+                let status = int(args, "status") ?? 200
+                let body = args["body"] as? String ?? ""
+                let type = string(args, "content_type") ?? "application/json"
+                try await mocks.add(.init(pattern: url, block: block, status: status, body: body, contentType: type))
+                lines.append(block ? "Requests whose URL contains “\(url)” now fail."
+                                   : "Requests whose URL contains “\(url)” now get \(status) \(type) (\(body.utf8.count) bytes).")
+                // escapedPattern already escapes "/" for a JavaScript regex literal.
+                let regex = NSRegularExpression.escapedPattern(for: url).replacingOccurrences(of: "\\*", with: ".*")
+                let line = block ? "await page.route(/\(regex)/, route => route.abort());"
+                    : "await page.route(/\(regex)/, route => route.fulfill({ status: \(status), contentType: \(PlaywrightExport.quote(type)), body: \(PlaywrightExport.quote(body)) }));"
+                tab.instruments.record(.init(kind: .route, locator: [:], value: line), session: session)
+            }
+            guard !lines.isEmpty else { return .error("Pass url (with status/body or block), offline, or clear.") }
+            if string(args, "url") != nil { lines.append("It applies to this tab's new requests until clear:true; reload if the page already made the request.") }
+            return .text(lines.joined(separator: " "))
+        }
+    }
+
+    private static func storage(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "use the storage of")
+        let action = string(args, "action") ?? "get"
+        let name = string(args, "name")
+        let value = args["value"] as? String
+        let host = Site.host(of: tab.url)
+        let local = Site.isLocalDevelopment(host)
+        if action == "set" || action == "delete" { guard name != nil else { return .error("\(action) needs name.") } }
+        if action == "set" && value == nil { return .error("set needs value.") }
+        let kinds = string(args, "kind").map { [$0] } ?? (action == "get" ? ["cookies", "local", "session"] : [])
+        guard !kinds.isEmpty else { return .error("\(action) needs kind: cookies, local or session.") }
+        if action != "get" && !local {
+            let what = action == "clear" ? "clear \(kinds[0] == "cookies" ? "the cookies" : "the stored data")" : "\(action) \(name ?? "")"
+            let ok = await AgentHub.shared.confirm(session, tab: tab, title: "\(session.name) wants to \(what)",
+                                                   message: "on \(host.isEmpty ? "this page" : host). This can sign you out or change the site's settings.")
+            guard ok else { return .error("The user didn't allow changing this site's storage. Don't retry; ask them.") }
+        }
+        return try await run(session, tab, "Looking at stored data", symbol: symbol(for: "storage")) {
+            var out: [String] = []
+            for kind in kinds {
+                if kind == "cookies" {
+                    out.append(try await cookies(tab, action: action, name: name, value: value, reveal: local, session: session))
+                } else {
+                    let result = try await js(tab, "__wink.storage(\(jsString(kind)), \(jsString(action)), \(name.map(jsString) ?? "null"), \(value.map(jsString) ?? "null"), \(local))") as? String ?? ""
+                    out.append(result)
+                    let store = kind == "session" ? "sessionStorage" : "localStorage"
+                    let line: String? = switch action {
+                    case "set": "await page.evaluate(([k, v]) => \(store).setItem(k, v), [\(PlaywrightExport.quote(name ?? "")), \(PlaywrightExport.quote(value ?? ""))]);"
+                    case "delete": "await page.evaluate(k => \(store).removeItem(k), \(PlaywrightExport.quote(name ?? "")));"
+                    case "clear": "await page.evaluate(() => \(store).clear());"
+                    default: nil
+                    }
+                    if let line { tab.instruments.record(.init(kind: .storage, locator: [:], value: line), session: session) }
+                }
+            }
+            if action == "get" && !local { out.append("(Values are hidden outside localhost.)") }
+            return .text(out.joined(separator: "\n"))
+        }
+    }
+
+    private static func cookies(_ tab: Tab, action: String, name: String?, value: String?, reveal: Bool,
+                                session: AgentSession) async throws -> String {
+        let url = tab.url
+        func list() async throws -> [[String: Any]] {
+            try await tab.cdp.send("Network.getCookies", ["urls": [url]])["cookies"] as? [[String: Any]] ?? []
+        }
+        switch action {
+        case "set":
+            _ = try await tab.cdp.send("Network.setCookie", ["name": name!, "value": value!, "url": url])
+            tab.instruments.record(.init(kind: .storage, locator: [:],
+                                         value: "await page.context().addCookies([{ name: \(PlaywrightExport.quote(name!)), value: \(PlaywrightExport.quote(value!)), url: page.url() }]);"), session: session)
+            return "cookies: set \(name!)."
+        case "delete":
+            _ = try await tab.cdp.send("Network.deleteCookies", ["name": name!, "url": url])
+            return "cookies: deleted \(name!)."
+        case "clear":
+            let all = try await list()
+            for cookie in all {
+                _ = try? await tab.cdp.send("Network.deleteCookies", ["name": cookie["name"] as? String ?? "", "url": url])
+            }
+            tab.instruments.record(.init(kind: .storage, locator: [:], value: "await page.context().clearCookies();"), session: session)
+            return "cookies: cleared \(all.count)."
+        default:
+            let all = try await list()
+            if all.isEmpty { return "cookies: none" }
+            return "cookies (\(all.count)):\n" + all.prefix(100).map { cookie in
+                let n = cookie["name"] as? String ?? "", v = cookie["value"] as? String ?? ""
+                var flags = [cookie["domain"] as? String ?? ""]
+                if cookie["httpOnly"] as? Bool == true { flags.append("HttpOnly") }
+                if cookie["secure"] as? Bool == true { flags.append("Secure") }
+                if cookie["session"] as? Bool == true { flags.append("session") }
+                let shown = reveal ? "\"\(v.prefix(300))\"" : "(hidden, \(v.count) characters)"
+                return "  \(n) = \(shown) [\(flags.joined(separator: ", "))]"
+            }.joined(separator: "\n")
+        }
+    }
+
+    /// Where agents' PDFs and recordings go: the user's Downloads (tests can redirect it).
+    private static func outputFile(_ base: String, ext: String) -> URL {
+        let env = ProcessInfo.processInfo.environment["WINK_DEBUG_DOWNLOADS"]
+        let folder = env.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let clean = base.components(separatedBy: CharacterSet(charactersIn: "/\\:?*\"<>|\n\r")).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces).prefix(80)
+        let stem = clean.isEmpty ? "Wink" : String(clean)
+        var url = folder.appendingPathComponent("\(stem).\(ext)")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(stem) \(n).\(ext)")
+            n += 1
+        }
+        return url
+    }
+
+    private static func savePDF(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "save")
+        return try await run(session, tab, "Saving a PDF", symbol: symbol(for: "save_pdf")) {
+            let result = try await tab.cdp.send("Page.printToPDF", ["printBackground": true], timeout: 60)
+            guard let data = (result["data"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
+                return .error("Chromium didn't produce a PDF.")
+            }
+            let url = outputFile(tab.displayTitle, ext: "pdf")
+            try data.write(to: url)
+            tab.instruments.record(.init(kind: .pdf, locator: [:], value: url.lastPathComponent), session: session)
+            let size = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
+            return .text("Saved \(url.path) (\(size)).")
+        }
+    }
+
+    private static func record(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "record")
+        let recorder = tab.instruments.recorder
+        switch string(args, "action") ?? "" {
+        case "start":
+            guard !recorder.isRecording else { return .error("Already recording this tab. Call record with action stop.") }
+            let format = DateFormatter()
+            format.locale = Locale(identifier: "en_US_POSIX")
+            format.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+            try await recorder.begin(to: outputFile("Wink recording \(format.string(from: Date()))", ext: "mp4"))
+            return .text("Recording the tab. Call record with action stop when you're done.")
+        case "stop":
+            guard let url = await recorder.end() else {
+                return .error("Nothing was recorded: the page didn't change on screen, or the display is asleep.")
+            }
+            let size = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? 0
+            return .text("Saved \(url.path) (\(recorder.frames) frames, \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))).")
+        default:
+            return .error("record needs action start or stop.")
+        }
+    }
+
+    private static func verify(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        guard let checks = args["expect"] as? [[String: Any]], !checks.isEmpty else { return .error("verify needs expect.") }
+        let tab = try await accessTab(args, session, purpose: "read")
+        var lines: [String] = []
+        var passed = 0
+        for check in checks {
+            let json = String(data: (try? JSONSerialization.data(withJSONObject: check, options: [.sortedKeys])) ?? Data(), encoding: .utf8) ?? "{}"
+            do {
+                let result = try await js(tab, "__wink.verify(\(json))") as? [String: Any] ?? [:]
+                if result["ok"] as? Bool == true { passed += 1; lines.append("✓ \(json)") }
+                else { lines.append("✗ \(json): actually \(result["actual"] as? String ?? "different")") }
+            } catch {
+                lines.append("✗ \(json): \(error.localizedDescription)")
+            }
+        }
+        return .text("\(passed) of \(checks.count) passed.\n" + lines.joined(separator: "\n"))
     }
 
     // MARK: - Claude Code permission prompts

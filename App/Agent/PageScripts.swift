@@ -1065,6 +1065,23 @@ enum PageScripts {
 
       W.selection = () => String(getSelection() || '');
 
+      // localStorage / sessionStorage for the storage tool. Values only when
+      // `reveal` (localhost): elsewhere they can hold session tokens.
+      W.storage = (kind, action, name, value, reveal) => {
+        const store = kind === 'session' ? sessionStorage : localStorage;
+        const label = kind === 'session' ? 'sessionStorage' : 'localStorage';
+        if (action === 'set') { store.setItem(name, value); return `${label}: set ${name}.`; }
+        if (action === 'delete') { const had = store.getItem(name) !== null; store.removeItem(name); return had ? `${label}: deleted ${name}.` : `${label}: no ${name}.`; }
+        if (action === 'clear') { const n = store.length; store.clear(); return `${label}: cleared ${n} key${n === 1 ? '' : 's'}.`; }
+        const keys = [];
+        for (let i = 0; i < store.length; i++) keys.push(store.key(i));
+        if (!keys.length) return `${label}: empty`;
+        return `${label} (${keys.length}):\n` + keys.slice(0, 100).map(k => {
+          const v = String(store.getItem(k) ?? '');
+          return `  ${k} = ` + (reveal ? JSON.stringify(v.length > 400 ? v.slice(0, 400) + '…' : v) : `(hidden, ${v.length} characters)`);
+        }).join('\n');
+      };
+
       // --- When real input doesn't arrive ---------------------------------
       // Chromium stops delivering input to pages while the Mac's display is
       // asleep or the screen is locked. Wink listens for the real event first
