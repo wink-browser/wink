@@ -60,4 +60,6 @@ Your name and optional photo stay on this Mac, in Wink's preferences and its pri
 
 If Claude Code is installed, Wink adds itself to Claude Code's MCP servers when it launches. It runs `claude mcp add --scope user wink`, which writes one entry to Claude Code's config. It reads Claude Code's config only to check that entry. Turn it off in Settings › Agents, or remove it with `claude mcp remove wink`, and Wink never adds it back. This sends nothing anywhere. An agent still can't browse until you allow it in Wink.
 
-Agents only see what you allow. See [Agents](AGENTS.md#consent-and-visibility) for the full consent model: own tabs only, isolated profile, protected sites, hidden sensitive fields, and an always-visible Stop.
+Agents only see what you allow.
+
+While an agent uses a tab, Wink keeps the details of that tab's network requests (headers and bodies, up to 400 requests) in memory so the agent can debug with them. Cookie and authorization headers are never shown, and nothing is written to disk or sent anywhere. Agents can attach files to pages only with your OK (except on localhost), and never from hidden folders, `~/Library` or system folders. See [Agents](AGENTS.md#consent-and-visibility) for the full consent model: own tabs only, isolated profile, protected sites, hidden sensitive fields, and an always-visible Stop.

@@ -18,6 +18,7 @@
 #include "include/cef_download_handler.h"
 #include "include/cef_find_handler.h"
 #include "include/cef_focus_handler.h"
+#include "include/cef_jsdialog_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_permission_handler.h"
@@ -389,6 +390,7 @@ class WinkClient : public CefClient,
                    public CefDownloadHandler,
                    public CefFindHandler,
                    public CefFocusHandler,
+                   public CefJSDialogHandler,
                    public CefPermissionHandler {
  public:
   explicit WinkClient(WinkWebView* view)
@@ -407,6 +409,7 @@ class WinkClient : public CefClient,
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
 
   // --- CefLifeSpanHandler ---------------------------------------------------
 
@@ -774,6 +777,47 @@ class WinkClient : public CefClient,
     }
   }
 
+  // --- CefJSDialogHandler ---------------------------------------------------
+  // While an agent controls the tab, alert/confirm/prompt/beforeunload are
+  // held for the agent to answer (handle_dialog) instead of showing a native
+  // alert the agent can't see and the user didn't ask for. Otherwise
+  // Chromium shows its usual dialog.
+
+  bool OnJSDialog(CefRefPtr<CefBrowser> browser,
+                  const CefString& origin_url,
+                  JSDialogType dialog_type,
+                  const CefString& message_text,
+                  const CefString& default_prompt_text,
+                  CefRefPtr<CefJSDialogCallback> callback,
+                  bool& suppress_message) override {
+    WinkWebView* view = view_;
+    if (!view.agentHandlesDialogs) return false;
+    NSString* type = dialog_type == JSDIALOGTYPE_CONFIRM ? @"confirm"
+                   : dialog_type == JSDIALOGTYPE_PROMPT ? @"prompt" : @"alert";
+    return HoldDialog(view, callback, type, ToNS(message_text), ToNS(default_prompt_text));
+  }
+
+  bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser,
+                            const CefString& message_text,
+                            bool is_reload,
+                            CefRefPtr<CefJSDialogCallback> callback) override {
+    WinkWebView* view = view_;
+    if (!view.agentHandlesDialogs) return false;
+    return HoldDialog(view, callback, @"beforeunload", ToNS(message_text), @"");
+  }
+
+  void OnResetDialogState(CefRefPtr<CefBrowser> browser) override { DialogGone(); }
+  void OnDialogClosed(CefRefPtr<CefBrowser> browser) override { DialogGone(); }
+
+  /// Answers the held dialog. NO if none is open.
+  bool AnswerDialog(bool accept, NSString* text) {
+    if (!dialog_callback_) return false;
+    CefRefPtr<CefJSDialogCallback> callback = dialog_callback_;
+    dialog_callback_ = nullptr;
+    callback->Continue(accept, ToCef(text ?: @""));
+    return true;
+  }
+
   // --- CefPermissionHandler -------------------------------------------------
 
   bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser> browser,
@@ -820,9 +864,27 @@ class WinkClient : public CefClient,
   }
 
  private:
+  bool HoldDialog(WinkWebView* view, CefRefPtr<CefJSDialogCallback> callback, NSString* type,
+                  NSString* message, NSString* defaultPrompt) {
+    if (![view.delegate respondsToSelector:@selector(webView:javaScriptDialogOpened:message:defaultPrompt:)]) return false;
+    if (dialog_callback_) dialog_callback_->Continue(false, CefString());  // one at a time
+    dialog_callback_ = callback;
+    [view.delegate webView:view javaScriptDialogOpened:type message:message defaultPrompt:defaultPrompt];
+    return true;
+  }
+
+  void DialogGone() {
+    dialog_callback_ = nullptr;
+    WinkWebView* view = view_;
+    if ([view.delegate respondsToSelector:@selector(webViewJavaScriptDialogClosed:)]) {
+      [view.delegate webViewJavaScriptDialogClosed:view];
+    }
+  }
+
   __weak WinkWebView* view_;
   CefRefPtr<WinkResourceHandler> resources_;
   NSMapTable<NSNumber*, WinkWebView*>* pending_popups_;
+  CefRefPtr<CefJSDialogCallback> dialog_callback_;
   IMPLEMENT_REFCOUNTING(WinkClient);
 };
 
@@ -891,6 +953,16 @@ class WinkClient : public CefClient,
 
 - (CefRefPtr<CefClient>)wink_client {
   return _client.get();
+}
+
+- (BOOL)answerJavaScriptDialog:(BOOL)accept text:(NSString*)text {
+  return _client && _client->AnswerDialog(accept, text);
+}
+
+- (void)setAgentHandlesDialogs:(BOOL)value {
+  _agentHandlesDialogs = value;
+  // An agent left with a dialog open: dismiss it rather than leave the page stuck.
+  if (!value && _client) _client->AnswerDialog(false, nil);
 }
 
 - (BOOL)isFlipped {

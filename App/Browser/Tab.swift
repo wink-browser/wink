@@ -92,6 +92,8 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     @ObservationIgnored private var loadWaiters: [(Bool) -> Void] = []
     @ObservationIgnored private var browserWaiters: [() -> Void] = []
     @ObservationIgnored private var _cdp: CDPSession?
+    /// Dialogs, network details and recorded steps while agents use this tab.
+    @ObservationIgnored lazy var instruments = AgentInstruments(tab: self)
 
     var cdp: CDPSession {
         if let existing = _cdp { return existing }
@@ -340,6 +342,27 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
 
     func webView(_ webView: WinkWebView, mediaAccessChangedVideo video: Bool, audio: Bool) {
         isCapturingMedia = video || audio
+    }
+
+    func webView(_ webView: WinkWebView, javaScriptDialogOpened type: String, message: String, defaultPrompt: String) {
+        instruments.dialogOpened(type: type, message: message, defaultPrompt: defaultPrompt)
+        // No agent at work here right now (paused, or gone): ask the user in
+        // Wink's own prompt card rather than leave the page waiting.
+        let session = AgentHub.shared.session(withID: agentSessionID ?? agentOwnerID)
+        guard session == nil || session!.isPaused || session!.isStopped else { return }
+        let title = type == "beforeunload" ? "Leave this page?" : "\(Site.host(of: url).isEmpty ? "This page" : Site.host(of: url)) says"
+        let options = type == "alert" ? ["OK"] : type == "beforeunload" ? ["Stay", "Leave"] : ["Cancel", "OK"]
+        Task { @MainActor [weak self, weak webView] in
+            let choice = await AgentHub.shared.prompt(symbol: "exclamationmark.bubble", title: title, message: message,
+                                                      options: options, tab: self)
+            let accept = type == "alert" || choice == 1
+            _ = webView?.answerJavaScriptDialog(accept, text: accept ? defaultPrompt : nil)
+            self?.instruments.dialogHandled()
+        }
+    }
+
+    func webViewJavaScriptDialogClosed(_ webView: WinkWebView) {
+        instruments.dialogClosed()
     }
 
     func webView(_ webView: WinkWebView, didReceiveDevToolsEvent method: String, params paramsJSON: Data) {

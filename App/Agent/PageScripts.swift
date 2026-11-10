@@ -5,12 +5,12 @@ import Foundation
 /// cannot observe or tamper with the agent. CDPSession installs it once per
 /// execution context and re-installs it after navigations.
 enum PageScripts {
-    static let version = 5
+    static let version = 6
 
     static let library = #"""
     (() => {
-      if (globalThis.__wink && globalThis.__wink.v === 5) return;
-      const W = { v: 5 };
+      if (globalThis.__wink && globalThis.__wink.v === 6) return;
+      const W = { v: 6 };
       globalThis.__wink = W;
       let nextRef = 1;
       const refToEl = new Map();
@@ -28,18 +28,46 @@ enum PageScripts {
       const STRUCTURE = new Set(['heading', 'banner', 'navigation', 'main', 'complementary', 'contentinfo',
         'form', 'dialog', 'alertdialog', 'region', 'article', 'list', 'table', 'img', 'iframe', 'alert', 'status', 'menu', 'tablist', 'search']);
 
-      W.refFor = (el) => {
+      // A ref remembers what it pointed at (role + name), so when a page
+      // re-renders (React and friends replace nodes all the time) the ref
+      // follows the element instead of going stale.
+      const refSig = new Map();
+      W.refFor = (el, role, name) => {
         let r = elToRef.get(el);
         if (!r) { r = 'e' + (nextRef++); elToRef.set(el, r); }
         refToEl.set(r, new WeakRef(el));
+        if (role && !refSig.has(r)) refSig.set(r, { role, name: name || '' });
         return r;
+      };
+      const rebind = (ref, el) => { elToRef.set(el, ref); refToEl.set(ref, new WeakRef(el)); };
+      const ROLE_SELECTOR = {
+        button: 'button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image],input[type=file],summary',
+        link: 'a[href],[role=link]', checkbox: 'input[type=checkbox],[role=checkbox]', radio: 'input[type=radio],[role=radio]',
+        textbox: 'input,textarea,[contenteditable],[role=textbox]', searchbox: 'input,[role=searchbox]',
+        combobox: 'select,input,[role=combobox]', option: 'option,[role=option]', tab: '[role=tab]', switch: '[role=switch]',
+        menuitem: '[role=menuitem]', heading: 'h1,h2,h3,h4,h5,h6,[role=heading]',
+      };
+      // Live elements with this role and name (a ref's signature).
+      const matching = (sig, root = document) => {
+        const out = [];
+        for (const el of root.querySelectorAll(ROLE_SELECTOR[sig.role] || '*')) {
+          if (roleOf(el) !== sig.role || !visible(el)) continue;
+          if (nameOf(el, sig.role) === sig.name) out.push(el);
+          if (out.length > 3) break;
+        }
+        return out;
       };
       W.el = (ref) => {
         const key = String(ref).replace(/^\[?(ref=)?/, '').replace(/\]$/, '');
         const w = refToEl.get(key);
         const el = w && w.deref();
-        if (!el || !el.isConnected) throw new Error(`Element ${key} is no longer on the page. Call find or snapshot for fresh refs.`);
-        return el;
+        if (el && el.isConnected) return el;
+        const sig = refSig.get(key);
+        if (sig && sig.name) {
+          const found = matching(sig);
+          if (found.length === 1) { rebind(key, found[0]); return found[0]; }
+        }
+        throw new Error(`Element ${key} is no longer on the page. Call find or snapshot for fresh refs.`);
       };
 
       const visible = (el) => {
@@ -90,9 +118,11 @@ enum PageScripts {
           case 'TABLE': return 'table';
           case 'UL': case 'OL': return 'list';
           case 'IFRAME': return 'iframe';
+          // A styled "Choose file" label over a hidden file input acts as its button.
+          case 'LABEL': if (el.control && el.control.type === 'file') return 'button'; break;
         }
         if (el.isContentEditable && el.getAttribute('contenteditable') !== null) return 'textbox';
-        if (el.hasAttribute('onclick') || (el.tabIndex >= 0 && el.hasAttribute('tabindex'))) return 'clickable';
+        if (el.hasAttribute('onclick') || (el.tabIndex >= 0 && el.hasAttribute('tabindex')) || el.getAttribute('draggable') === 'true') return 'clickable';
         if ((tag === 'DIV' || tag === 'SPAN' || tag === 'LI') && el.childElementCount < 6) {
           const style = getComputedStyle(el);
           if (style.cursor === 'pointer' && !(el.parentElement && getComputedStyle(el.parentElement).cursor === 'pointer')) return 'clickable';
@@ -116,7 +146,17 @@ enum PageScripts {
             if (label && clean(label.innerText)) return clean(label.innerText);
           }
           const wrapping = el.closest('label');
-          if (wrapping && clean(wrapping.innerText)) return clean(wrapping.innerText);
+          if (wrapping) {
+            // The label's own words, not the control's (a <select>'s options).
+            let text = '';
+            const walk = (n) => {
+              if (n === el) return;
+              if (n.nodeType === 3) text += n.textContent;
+              else if (n.nodeType === 1 && !SKIP.has(n.tagName)) { for (const c of n.childNodes) walk(c); if (getComputedStyle(n).display === 'block') text += ' '; }
+            };
+            walk(wrapping);
+            if (clean(text)) return clean(text);
+          }
           if (['submit', 'button', 'reset'].includes(el.type) && el.value) return clean(el.value);
           if (el.placeholder) return clean(el.placeholder);
           if (el.title) return clean(el.title);
@@ -178,7 +218,7 @@ enum PageScripts {
         role = role || roleOf(el) || el.tagName.toLowerCase();
         const name = nameOf(el, role);
         const states = statesOf(el, role);
-        let line = `${role}${name ? ` "${quote(name)}"` : ''} [ref=${W.refFor(el)}]`;
+        let line = `${role}${name ? ` "${quote(name)}"` : ''} [ref=${W.refFor(el, role, name)}]`;
         if (states.length) line += ' [' + states.join(', ') + ']';
         if (role === 'link') { const h = hrefOf(el); if (h) line += ' → ' + h; }
         if (role === 'combobox' && el.tagName === 'SELECT') {
@@ -315,7 +355,8 @@ enum PageScripts {
         return header.concat(lines).join('\n');
       };
 
-      W.read = (maxChars = 20000) => {
+      W.read = (maxChars = 20000, match = '') => {
+        if (match) return W.grep(maxChars, match);
         const root = document.querySelector('main, article, [role=main]') || document.body;
         const out = [];
         let len = 0;
@@ -388,6 +429,37 @@ enum PageScripts {
         const total = text.length;
         if (total > maxChars) text = text.slice(0, maxChars) + `\n\n[… truncated: ${total - maxChars} more characters. Call read_page with a larger max_chars or scroll + snapshot.]`;
         return `# ${clean(document.title, 200)}\n${location.href}\n\n${text || '(no readable text)'}`;
+      };
+
+      // Only the parts of the page that mention `match` (paragraphs, list
+      // items, table rows), each under its nearest heading: read one fact
+      // from a long page without reading the page.
+      W.grep = (maxChars, match) => {
+        const needle = String(match).toLowerCase();
+        const full = (() => {
+          const text = W.read(400000).split('\n');
+          return text.slice(2);
+        })();
+        const out = [];
+        let heading = '', lastHeading = '', len = 0, hits = 0;
+        for (const line of full) {
+          if (/^#{1,6} /.test(line)) {
+            heading = line;
+            if (!line.toLowerCase().includes(needle)) continue;
+            out.push('\n' + line); lastHeading = line; hits++; len += line.length;
+            continue;
+          }
+          if (!line.toLowerCase().includes(needle)) continue;
+          if (heading && heading !== lastHeading) { out.push('\n' + heading); lastHeading = heading; }
+          const l = line.length > 600 ? line.slice(0, 600) + '…' : line;
+          out.push(l);
+          hits++;
+          len += l.length;
+          if (len > maxChars) { out.push('… (more matches; narrow the match text)'); break; }
+        }
+        const head = `# ${clean(document.title, 200)}\n${location.href}\n`;
+        return hits ? `${head}\n${hits} part${hits === 1 ? '' : 's'} mention “${match}”:\n${out.join('\n').trim()}`
+                    : `${head}\nNothing on the page mentions “${match}”. Try a shorter word, or read_page without match.`;
       };
 
       const composedParent = (n) => n.parentNode || (n instanceof ShadowRoot ? n.host : null) || n.host || null;
@@ -463,8 +535,9 @@ enum PageScripts {
           }
         }
         const role = roleOf(el) || el.tagName.toLowerCase();
-        return { x, y, rect: r, radius: cornerOf(el), role, name: nameOf(el, role), sensitive: isSensitive(el),
-                 editable: isEditable(el), obscuredBy, risk: W.riskOf(el), ref: W.refFor(el) };
+        const name = nameOf(el, role);
+        return { x, y, rect: r, radius: cornerOf(el), role, name, sensitive: isSensitive(el),
+                 editable: isEditable(el), obscuredBy, risk: W.riskOf(el), ref: W.refFor(el, role, name) };
       };
 
       // What is at a viewport point (for coordinate clicks)?
@@ -555,16 +628,40 @@ enum PageScripts {
             const own = (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '') + ' ' + (el.getAttribute('title') || '');
             if (own.toLowerCase().includes(q)) { consider(el); continue; }
             // Text matches resolve to the element the user would click.
-            if (el.childElementCount === 0 && (el.textContent || '').toLowerCase().includes(q)) {
+            const text = el.childElementCount === 0 ? (el.textContent || '') : directText(el);
+            if (text.toLowerCase().includes(q)) {
               const target = interactiveAncestor(el);
               if (target) consider(target);
               else if (/^H[1-6]$/.test(el.tagName)) consider(el);
+              // Text in a <label> names its control (a checkbox next to the text).
+              const label = el.closest && el.closest('label');
+              if (label && label.control) consider(label.control);
             }
           }
         };
         walk(document);
         const header = `${found.length} match${found.length === 1 ? '' : 'es'} for ${q ? `“${query}”` : ''}${wantRole ? ` role=${wantRole}` : ''}${found.length >= max ? ` (first ${max})` : ''}`;
         return found.length ? header + '\n' + found.map(l => '- ' + l).join('\n') : header + '. Try a shorter text, or snapshot.';
+      };
+
+      // Any visible element showing `text` (drop zones are often plain divs):
+      // the innermost one, so a column's heading stands for its column.
+      W.refByText = (text) => {
+        const needle = String(text).toLowerCase().trim();
+        let best = null, bestLen = Infinity;
+        for (const el of document.body.querySelectorAll('*')) {
+          if (SKIP.has(el.tagName) || !visible(el)) continue;
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          const own = label || (el.childElementCount === 0 ? (el.textContent || '').toLowerCase() : directText(el).toLowerCase());
+          if (!own.includes(needle)) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) continue;
+          const len = own.length + (label ? 0 : 1);
+          if (len < bestLen) { best = el; bestLen = len; }
+        }
+        if (!best) throw new Error(`Nothing on the page shows “${text}”.`);
+        const role = roleOf(best) || 'element';
+        return W.refFor(best, role, nameOf(best, role));
       };
 
       W.findByText = (text, soft) => {
@@ -623,10 +720,34 @@ enum PageScripts {
         return lines;
       };
 
+      // State of an element that matters for "did it change" (not focus).
+      const stateKey = (el, role) => statesOf(el, role).filter(x => x !== 'focused').join(',');
+      const interactiveEls = (root, max, skip) => {
+        const out = [];
+        const visit = (el) => {
+          if (out.length >= max || el.nodeType !== 1) return;
+          if (skip && skip.has(el)) return;
+          if (SKIP.has(el.tagName) || el.getAttribute('aria-hidden') === 'true' || el.hidden || !visible(el)) return;
+          const role = roleOf(el);
+          if (role && INTERACTIVE.has(role)) { out.push([el, role]); if (role !== 'listbox' && role !== 'menu') return; }
+          for (const c of childrenOf(el)) visit(c);
+        };
+        visit(root);
+        return out;
+      };
+
       W.watch = () => {
         if (W._mo) W._mo.disconnect();
+        // What the agent already knows: its refs, their role/name and state.
+        const known = [];
+        for (const [ref, w] of refToEl) {
+          if (known.length >= 600) break;
+          const el = w.deref(), sig = refSig.get(ref);
+          if (!el || !sig || !el.isConnected) continue;
+          known.push({ ref, el, sig, state: stateKey(el, sig.role) });
+        }
         const st = { added: new Set(), touched: new Set(), texted: new Set(), revealed: new Set(), muts: 0, last: performance.now(),
-                     url: location.href, title: document.title, dialogs: new Set(dialogsNow()), focus: deepActive() };
+                     url: location.href, title: document.title, dialogs: new Set(dialogsNow()), focus: deepActive(), known };
         W._st = st;
         W._mo = new MutationObserver((records) => {
           st.muts += records.length;
@@ -635,7 +756,7 @@ enum PageScripts {
             if (r.type === 'childList') {
               for (const n of r.addedNodes) {
                 if (n.nodeType === 1) st.added.add(n);
-                else if (n.nodeType === 3 && n.parentElement) st.touched.add(n.parentElement);
+                else if (n.nodeType === 3 && n.parentElement) { st.touched.add(n.parentElement); st.texted.add(n.parentElement); }
               }
               if (r.removedNodes.length && r.target.nodeType === 1) st.touched.add(r.target);
             } else if (r.type === 'characterData') {
@@ -657,14 +778,16 @@ enum PageScripts {
       W.muts = () => W._st ? [W._st.muts, performance.now() - W._st.last] : [-1, 0];
 
       // Summarises what changed since watch(): dialogs, notices, controls that
-      // changed state, new controls — nearest to (cx, cy) first.
+      // changed state, controls that went away, new controls, short texts that
+      // changed — nearest to (cx, cy) first. Re-rendered copies of elements the
+      // agent knew keep their refs and are only reported if they changed.
       W.changes = (limit = 22, cx = -1, cy = -1) => {
         const st = W._st;
         if (!st) return '';
         if (W._mo) { W._mo.disconnect(); W._mo = null; }
         W._st = null;
         const dist = (el) => {
-          if (cx < 0) return 0;
+          if (cx < 0 || !el.isConnected) return 0;
           const r = el.getBoundingClientRect();
           const dx = Math.max(r.left - cx, 0, cx - r.right), dy = Math.max(r.top - cy, 0, cy - r.bottom);
           return dx * dx + dy * dy;
@@ -699,34 +822,82 @@ enum PageScripts {
           if (n.matches(noticeSelector)) { notice(n, n.innerText); continue; }
           for (const r of n.querySelectorAll(noticeSelector)) if (visible(r)) notice(r, r.innerText);
         }
+        const inNotice = new Set();
         for (const n of st.texted) {
           if (!n.isConnected) continue;
           const region = n.closest(noticeSelector);
-          if (region && visible(region)) notice(region, n.innerText);
+          if (region && visible(region)) { notice(region, n.innerText); inNotice.add(n); }
         }
         notices.forEach(line => lines.push(line));
 
+        // Elements the agent knew that were replaced: hand their refs to the
+        // re-rendered copies (same role and name).
+        const orphans = new Map();  // "role|name" → [known entries whose element left]
+        for (const k of st.known) {
+          if (k.el.isConnected) continue;
+          const key = k.sig.role + '|' + k.sig.name;
+          if (!orphans.has(key)) orphans.set(key, []);
+          orphans.get(key).push(k);
+        }
+        const nowLines = [], freshLines = [];
+        const reported = new Set();
+        const skip = new Set(opened);
+        const candidates = [];
+        for (const n of [...st.added, ...st.revealed]) {
+          if (!n.isConnected || inOpened(n) || opened.includes(n)) continue;
+          for (const pair of interactiveEls(n, 40, skip)) candidates.push(pair);
+          if (candidates.length > 400) break;
+        }
+        for (const [el, role] of candidates) {
+          if (reported.has(el)) continue;
+          reported.add(el);
+          const name = nameOf(el, role);
+          const list = orphans.get(role + '|' + name);
+          if (list && list.length) {
+            const k = list.shift();
+            rebind(k.ref, el);
+            if (stateKey(el, role) !== k.state) nowLines.push({ line: describe(el, role), d: dist(el) });
+          } else {
+            freshLines.push({ line: describe(el, role), d: dist(el) });
+          }
+        }
+        // Controls that stayed but changed state.
         const changed = new Set();
         for (const n of st.touched) {
           if (!n.isConnected) continue;
           const el = interactiveAncestor(n);
-          if (el && !inOpened(el) && visible(el)) changed.add(el);
+          if (el && !reported.has(el) && !inOpened(el) && visible(el)) changed.add(el);
         }
-        [...changed].sort((a, b) => dist(a) - dist(b)).slice(0, 6).forEach(el => lines.push('now: ' + describe(el)));
+        for (const el of changed) {
+          const ref = elToRef.get(el);
+          const k = ref && st.known.find(x => x.ref === ref);
+          if (k && stateKey(el, k.sig.role) === k.state) continue;
+          nowLines.push({ line: describe(el), d: dist(el) });
+        }
+        nowLines.sort((a, b) => a.d - b.d).slice(0, 8).forEach(({ line }) => lines.push('now: ' + line));
+        const gone = [];
+        for (const list of orphans.values()) for (const k of list) gone.push(`${k.sig.role}${k.sig.name ? ` "${quote(k.sig.name)}"` : ''} [ref=${k.ref}]`);
+        gone.slice(0, 6).forEach(g => lines.push('gone: ' + g));
+        if (gone.length > 6) lines.push(`gone: … ${gone.length - 6} more`);
+        freshLines.sort((a, b) => a.d - b.d).slice(0, 8).forEach(({ line }) => lines.push('new: ' + line));
+        if (freshLines.length > 8) lines.push(`new: … ${freshLines.length - 8} more`);
 
-        const fresh = [];
-        const skip = new Set(opened);
-        for (const n of [...st.added, ...st.revealed]) {
-          if (!n.isConnected || inOpened(n) || opened.includes(n)) continue;
-          for (const line of interactiveIn(n, 6, skip)) fresh.push({ line, d: dist(n) });
-          if (fresh.length > 40) break;
+        // Short texts that changed (counters, totals, inline messages).
+        const texts = [];
+        const seenText = new Set();
+        for (const n of st.texted) {
+          if (!n.isConnected || inNotice.has(n) || inOpened(n) || interactiveAncestor(n) || !visible(n)) continue;
+          if (n.childElementCount > 2) continue;
+          const t = clean(n.innerText, 100);
+          if (!t || t.length > 90 || seenText.has(t)) continue;
+          seenText.add(t);
+          texts.push({ line: `text: “${t}”`, d: dist(n) });
         }
-        const shown = new Set(lines);
-        fresh.sort((a, b) => a.d - b.d).slice(0, 8).forEach(({ line }) => { if (!shown.has('now: ' + line)) lines.push('new: ' + line); });
+        texts.sort((a, b) => a.d - b.d).slice(0, 4).forEach(({ line }) => lines.push(line));
 
         // Focus is news only when it lands in a field (e.g. a composer opened).
         const f = deepActive();
-        if (f && f !== st.focus && isEditable(f) && !inOpened(f)) {
+        if (f && f !== st.focus && isEditable(f) && !inOpened(f) && !reported.has(f)) {
           lines.push(`focus: ${describe(f, roleOf(f) || 'textbox')}`);
         }
         if (location.href !== st.url) lines.push(`URL now: ${location.href}`);
@@ -748,6 +919,98 @@ enum PageScripts {
           }
         }
         return { sensitive: isSensitive(el), editable: isEditable(el), focused: el.ownerDocument.activeElement === el };
+      };
+
+      // Typing verification: what the field holds now.
+      W.valueOf = (ref) => {
+        const el = W.el(ref);
+        return String(el.isContentEditable ? el.innerText : (el.value ?? ''));
+      };
+      // Fallback when keystrokes didn't land (custom inputs, odd focus): set the
+      // value through the native setter so frameworks (React's value tracker
+      // included) see a real change, then fire input + change.
+      W.setValue = (ref, text, clear) => {
+        const el = W.el(ref);
+        el.focus({ preventScroll: true });
+        if (el.isContentEditable) {
+          if (clear) el.textContent = '';
+          el.ownerDocument.execCommand('insertText', false, text);
+        } else {
+          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
+            : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+          setter.call(el, clear ? text : String(el.value ?? '') + text);
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return W.valueOf(ref);
+      };
+      W.checkedOf = (ref) => {
+        const el = W.el(ref);
+        return typeof el.checked === 'boolean' ? el.checked : el.getAttribute('aria-checked') === 'true';
+      };
+
+      // The <input type=file> behind a ref: the input itself, one inside it,
+      // its label's control, or the only file input in its form or page.
+      W.fileInput = (ref) => {
+        const el = W.el(ref);
+        const isFile = (x) => x && x.tagName === 'INPUT' && x.type === 'file';
+        if (isFile(el)) return el;
+        const inside = el.querySelector && el.querySelector('input[type=file]');
+        if (inside) return inside;
+        const label = el.closest && el.closest('label');
+        if (label && isFile(label.control)) return label.control;
+        const scope = (el.closest && el.closest('form')) || document;
+        const all = scope.querySelectorAll('input[type=file]');
+        if (all.length === 1) return all[0];
+        const page = document.querySelectorAll('input[type=file]');
+        if (page.length === 1) return page[0];
+        throw new Error(`No file input found for ${ref}. Pass the ref of the <input type=file> (find role button "Choose file" or snapshot).`);
+      };
+
+      // How Playwright should find an element: by role and accessible name when
+      // that's unique, else test id, id, or a CSS path.
+      const ARIA = new Set(['link', 'button', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'listbox', 'option',
+        'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'switch', 'slider', 'spinbutton', 'treeitem', 'heading']);
+      const cssPath = (el) => {
+        const parts = [];
+        for (let n = el; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
+          if (n.id && document.querySelectorAll('#' + CSS.escape(n.id)).length === 1) { parts.unshift('#' + CSS.escape(n.id)); break; }
+          let part = n.tagName.toLowerCase();
+          const sameTag = n.parentElement ? Array.from(n.parentElement.children).filter(c => c.tagName === n.tagName) : [];
+          if (sameTag.length > 1) part += `:nth-of-type(${sameTag.indexOf(n) + 1})`;
+          parts.unshift(part);
+        }
+        return parts.join(' > ');
+      };
+      W.locatorOf = (ref) => {
+        const el = W.el(ref);
+        const role = roleOf(el) || '';
+        const name = nameOf(el, role);
+        const testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id') || el.getAttribute('data-test');
+        // File inputs are usually hidden, so not in the accessibility tree.
+        if (el.tagName === 'INPUT' && el.type === 'file') return testId ? { testId } : { css: cssPath(el) };
+        if (ARIA.has(role) && name && !name.endsWith('…')) {
+          const all = matching({ role, name });
+          if (all.length <= 1) return { role, name };
+          if (!testId) return { role, name, nth: Math.max(0, all.indexOf(el)) };
+        }
+        if (testId) return { testId };
+        if (role === 'clickable' && name && !name.endsWith('…')) return { text: name };
+        return { css: cssPath(el) };
+      };
+
+      // Assertions for exported tests, checked against the live page first.
+      W.verify = (check) => {
+        if (check.text != null) {
+          const ok = (document.body?.innerText || '').includes(check.text);
+          return { ok, actual: ok ? '' : 'text not on the page' };
+        }
+        const el = W.el(check.ref);
+        if (check.checked != null) { const v = W.checkedOf(check.ref); return { ok: v === check.checked, actual: v ? 'checked' : 'unchecked' }; }
+        if (check.value != null) { const v = W.valueOf(check.ref); return { ok: v === check.value, actual: `value "${clean(v, 60)}"` }; }
+        const v = visible(el) && el.getBoundingClientRect().width > 0;
+        return { ok: check.visible === false ? !v : v, actual: v ? 'visible' : 'hidden' };
       };
 
       W.selectOption = (ref, value) => {
@@ -801,6 +1064,152 @@ enum PageScripts {
       });
 
       W.selection = () => String(getSelection() || '');
+
+      // --- When real input doesn't arrive ---------------------------------
+      // Chromium stops delivering input to pages while the Mac's display is
+      // asleep or the screen is locked. Wink listens for the real event first
+      // (this page and its same-origin frames); if it never comes, it plays
+      // the same events from inside the page, so agents keep working while
+      // the user is away.
+      const sameOriginWindows = () => {
+        const out = [window];
+        for (const f of document.querySelectorAll('iframe')) { try { if (f.contentWindow && f.contentDocument) out.push(f.contentWindow); } catch {} }
+        return out;
+      };
+      W.armInput = (type) => {
+        if (W._disarm) W._disarm();
+        W._arrived = false;
+        const handler = () => { W._arrived = true; };
+        const wins = sameOriginWindows();
+        for (const w of wins) w.addEventListener(type, handler, true);
+        W._disarm = () => { for (const w of wins) { try { w.removeEventListener(type, handler, true); } catch {} } };
+        return true;
+      };
+      // null when nothing is armed (e.g. the click navigated to a new page):
+      // the caller then assumes the input arrived.
+      W.inputArrived = () => {
+        if (!W._disarm) return null;
+        const arrived = !!W._arrived;
+        if (W._disarm) W._disarm();
+        W._disarm = null;
+        return arrived;
+      };
+      // The element at a viewport point, through shadow roots and same-origin
+      // frames, with the point in that element's own frame.
+      const pointTarget = (x, y) => {
+        let doc = document, el = document.elementFromPoint(x, y), fx = x, fy = y;
+        for (let i = 0; i < 8 && el; i++) {
+          if (el.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(fx, fy); if (inner && inner !== el) { el = inner; continue; } }
+          if (el.tagName === 'IFRAME') {
+            try {
+              const r = el.getBoundingClientRect();
+              const d = el.contentDocument;
+              if (d) { fx -= r.left; fy -= r.top; doc = d; const inner = d.elementFromPoint(fx, fy); if (inner) { el = inner; continue; } }
+            } catch {}
+          }
+          break;
+        }
+        return el ? { el, x: fx, y: fy, view: (el.ownerDocument || doc).defaultView } : null;
+      };
+      const mouseInit = (t, button, buttons, detail) => ({ bubbles: true, cancelable: true, composed: true, view: t.view,
+        clientX: t.x, clientY: t.y, screenX: t.x, screenY: t.y, button, buttons, detail });
+      const fire = (t, Type, type, init) => {
+        const C = t.view && t.view[Type] || globalThis[Type];
+        return t.el.dispatchEvent(new C(type, init));
+      };
+      const focusFor = (el) => {
+        const f = el.closest && el.closest('input,textarea,select,button,a[href],[tabindex],[contenteditable=""],[contenteditable=true]');
+        if (f && f.focus) f.focus({ preventScroll: true });
+      };
+      W.syntheticClick = (x, y, buttonName, count) => {
+        const t = pointTarget(x, y);
+        if (!t) return false;
+        const button = buttonName === 'right' ? 2 : buttonName === 'middle' ? 1 : 0;
+        const bits = button === 2 ? 2 : button === 1 ? 4 : 1;
+        for (let i = 1; i <= Math.max(1, count); i++) {
+          fire(t, 'PointerEvent', 'pointerover', { ...mouseInit(t, 0, 0, 0), pointerType: 'mouse', isPrimary: true });
+          fire(t, 'MouseEvent', 'mouseover', mouseInit(t, 0, 0, 0));
+          fire(t, 'PointerEvent', 'pointerdown', { ...mouseInit(t, button, bits, i), pointerType: 'mouse', isPrimary: true });
+          if (fire(t, 'MouseEvent', 'mousedown', mouseInit(t, button, bits, i))) focusFor(t.el);
+          fire(t, 'PointerEvent', 'pointerup', { ...mouseInit(t, button, 0, i), pointerType: 'mouse', isPrimary: true });
+          fire(t, 'MouseEvent', 'mouseup', mouseInit(t, button, 0, i));
+          if (button === 2) fire(t, 'MouseEvent', 'contextmenu', mouseInit(t, 2, 0, i));
+          else if (button === 0) fire(t, 'MouseEvent', 'click', mouseInit(t, 0, 0, i));
+        }
+        if (count >= 2 && button === 0) fire(t, 'MouseEvent', 'dblclick', mouseInit(t, 0, 0, 2));
+        return true;
+      };
+      W.syntheticHover = (x, y) => {
+        const t = pointTarget(x, y);
+        if (!t) return false;
+        fire(t, 'PointerEvent', 'pointerover', { ...mouseInit(t, 0, 0, 0), pointerType: 'mouse', isPrimary: true });
+        fire(t, 'PointerEvent', 'pointerenter', { ...mouseInit(t, 0, 0, 0), bubbles: false, pointerType: 'mouse', isPrimary: true });
+        fire(t, 'MouseEvent', 'mouseover', mouseInit(t, 0, 0, 0));
+        fire(t, 'MouseEvent', 'mouseenter', { ...mouseInit(t, 0, 0, 0), bubbles: false });
+        fire(t, 'PointerEvent', 'pointermove', { ...mouseInit(t, 0, 0, 0), pointerType: 'mouse', isPrimary: true });
+        fire(t, 'MouseEvent', 'mousemove', mouseInit(t, 0, 0, 0));
+        return true;
+      };
+      const focusables = () => Array.from(document.querySelectorAll('input:not([type=hidden]),textarea,select,button,a[href],[tabindex]:not([tabindex="-1"]),[contenteditable=""],[contenteditable=true]'))
+        .filter(el => !el.disabled && visible(el) && el.getBoundingClientRect().width > 0);
+      W.syntheticKey = (key, code, keyCode, text, mods) => {
+        const el = deepActive() || document.body;
+        const view = el.ownerDocument.defaultView;
+        const init = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true, view,
+                       altKey: !!(mods & 1), ctrlKey: !!(mods & 2), metaKey: !!(mods & 4), shiftKey: !!(mods & 8) };
+        const K = view.KeyboardEvent;
+        const proceed = el.dispatchEvent(new K('keydown', init));
+        if (proceed) {
+          if (text && text !== '\r') {
+            el.dispatchEvent(new K('keypress', { ...init, charCode: text.charCodeAt(0) }));
+            if (isEditable(el)) el.ownerDocument.execCommand('insertText', false, text);
+          } else if (key === 'Enter') {
+            el.dispatchEvent(new K('keypress', { ...init, charCode: 13 }));
+            if (el.tagName === 'INPUT' && el.form) el.form.requestSubmit();
+            else if (el.tagName === 'TEXTAREA' || el.isContentEditable) el.ownerDocument.execCommand('insertLineBreak');
+            else if (el.tagName === 'BUTTON' || (el.tagName === 'A' && el.href)) el.click();
+          } else if (key === ' ' && (el.tagName === 'BUTTON' || el.type === 'checkbox' || el.type === 'radio')) {
+            el.click();
+          } else if (key === 'Backspace' && isEditable(el)) {
+            el.ownerDocument.execCommand('delete');
+          } else if (key === 'Tab') {
+            const list = focusables();
+            const i = list.indexOf(el);
+            const next = list[(i + (mods & 8 ? -1 : 1) + list.length) % list.length];
+            if (next) next.focus();
+          }
+        }
+        el.dispatchEvent(new K('keyup', init));
+        return true;
+      };
+      W.syntheticDrag = (fx, fy, tx, ty) => {
+        const from = pointTarget(fx, fy), to = pointTarget(tx, ty);
+        if (!from || !to) return false;
+        fire(from, 'PointerEvent', 'pointerdown', { ...mouseInit(from, 0, 1, 1), pointerType: 'mouse', isPrimary: true });
+        fire(from, 'MouseEvent', 'mousedown', mouseInit(from, 0, 1, 1));
+        const draggable = from.el.closest && from.el.closest('[draggable=true],a[href],img');
+        if (draggable) {
+          const dt = new DataTransfer();
+          const src = { ...from, el: draggable };
+          const init = (t) => ({ ...mouseInit(t, 0, 1, 0), dataTransfer: dt });
+          if (fire(src, 'DragEvent', 'dragstart', init(src))) {
+            fire(to, 'DragEvent', 'dragenter', init(to));
+            const over = fire(to, 'DragEvent', 'dragover', init(to));
+            if (!over) fire(to, 'DragEvent', 'drop', init(to));
+          }
+          fire(src, 'DragEvent', 'dragend', init(src));
+        } else {
+          for (let i = 1; i <= 8; i++) {
+            const x = fx + (tx - fx) * i / 8, y = fy + (ty - fy) * i / 8;
+            const t = pointTarget(x, y) || to;
+            fire(t, 'PointerEvent', 'pointermove', { ...mouseInit({ ...t, x, y }, 0, 1, 0), pointerType: 'mouse', isPrimary: true });
+            fire(t, 'MouseEvent', 'mousemove', mouseInit({ ...t, x, y }, 0, 1, 0));
+          }
+        }
+        fire(to, 'PointerEvent', 'pointerup', { ...mouseInit(to, 0, 0, 1), pointerType: 'mouse', isPrimary: true });
+        fire(to, 'MouseEvent', 'mouseup', mouseInit(to, 0, 0, 1));
+        return true;
+      };
 
       W.mediaPlaying = () => Array.from(document.querySelectorAll('video,audio')).some(m => !m.paused && !m.muted && m.volume > 0);
     })();

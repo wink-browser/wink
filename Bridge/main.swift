@@ -66,8 +66,8 @@ func launchWink() {
     var args = ["/usr/bin/open", "-g"]
     // A side-by-side dev build passes its test settings on (never the release).
     if bundleIdentifier != "app.wink.browser" {
-        for key in ["WINK_DEBUG_DIR", "WINK_DEBUG_HEADLESS", "WINK_HOME"] {
-            if let value = getenv(key) { args += ["--env", "\(key)=\(String(cString: value))"] }
+        for (key, value) in ProcessInfo.processInfo.environment where key.hasPrefix("WINK_DEBUG") || key == "WINK_HOME" {
+            args += ["--env", "\(key)=\(value)"]
         }
     }
     args += appBundlePath.map { [$0] } ?? ["-b", bundleIdentifier]

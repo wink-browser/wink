@@ -48,26 +48,46 @@ No TCP port is opened, so web pages can't reach the server through DNS rebinding
 | `navigate`, `go_back`, `go_forward`, `reload` | Navigation; waits for load |
 | `find` | Interactive elements whose label contains some text, with refs and the card or row each sits in |
 | `snapshot` | Accessibility-style outline with refs, e.g. `button "Sign in" [ref=e12]` |
-| `read_page` | Main content as Markdown |
+| `read_page` | Main content as Markdown; with `match`, only the paragraphs, list items and table rows that mention it |
 | `screenshot` | JPEG of the viewport or full page; one image pixel is one CSS pixel. `labels: true` draws element refs on it |
-| `click`, `type`, `press_key`, `select_option`, `hover`, `scroll` | Act by ref, label, or screenshot coordinates using trusted input events; each returns what changed |
-| `batch` | Up to 25 of those steps in one call, stopping at the first failure |
+| `click`, `type`, `press_key`, `select_option`, `hover`, `scroll` | Act by ref, label, or screenshot coordinates using trusted input events; each returns what changed. `type` checks the text landed |
+| `fill_form` | Many fields in one call: text, selects, checkboxes, radios, switches |
+| `drag` | Drag one element onto another, by ref or visible text (HTML5 drag and drop or pointer-based) |
+| `upload_file` | Attach files to a file input; the user approves uploads outside localhost |
+| `handle_dialog` | Answer a JavaScript alert, confirm, prompt or "leave page?" |
+| `batch` | Up to 25 steps in one call, stopping at the first failure |
 | `wait_for` | Wait for text or a selector to appear or disappear |
 | `get_selection` | The user's selected text |
-| `console_logs`, `network_requests` | Page errors and failed or blocked requests, for debugging web apps |
-| `evaluate` | Run JavaScript; off unless the user enables it |
+| `console_logs`, `network_requests` | Page errors and requests, failed and blocked ones included; `url` shows one request with headers and bodies |
+| `evaluate` | Run JavaScript; always on localhost, elsewhere only if the user enables it |
+| `emulate` | Phone, tablet or custom viewport, dark mode, reduced motion |
+| `export_test` | The agent's steps in a tab as a Playwright test, with checks verified on the live page |
 
-A typical loop: `tab_open` → `find` → `click`/`type` by ref, reading each action's report → `batch` for the repetitive part. Refs live in Wink's isolated JavaScript world, so they survive re-renders until the page navigates.
+A typical loop: `tab_open` → `find` → `click`/`type` by ref, reading each action's report → `batch` for the repetitive part. Refs live in Wink's isolated JavaScript world and remember their element's role and name, so when a framework re-renders a list, the ref follows its element instead of going stale.
 
 ### Built for few round trips
 
 A model turn costs seconds; a tool call costs milliseconds. So Wink spends its effort on cutting turns:
 
-- **Every action reports its effect.** Wink watches the DOM around each action, waits for it to settle, and returns what changed: dialogs that opened, with their buttons' refs; notices and toasts; controls whose state changed (`Connect` → `Pending`); new controls nearest the target; URL changes. Agents chain the next step without a fresh snapshot or screenshot.
+- **Every action reports its effect.** Wink watches the DOM around each action, waits for it to settle, and returns only what changed: dialogs that opened, with their buttons' refs; notices and toasts; controls whose state changed (`checkbox "write report" [checked]`); controls that went away; new controls nearest the target; short texts that changed (`text: “1 item left”`); URL changes. Re-rendered copies of elements the agent already knew aren't reported as new. Agents chain the next step without a fresh snapshot or screenshot.
 - **`find` replaces most snapshots.** It returns just the matching elements and their context in a few milliseconds.
 - **`batch` runs known sequences in one call.** Text targets wait briefly for elements to appear, which suits dialogs.
 - **Settling is polled from Wink, not from page timers.** Background tabs, whose timers Chromium throttles, settle as fast as visible ones. Navigations end the wait as soon as the page loads.
 - **Screenshots are in CSS pixels**, so coordinates from the image can be clicked as-is. They are also half the size of a Retina capture, so cheaper for the model.
+- **The same tools, byte for byte, every session.** Tool definitions are serialized with sorted keys, so an agent's prompt cache keeps hitting across sessions and Wink restarts.
+
+### For web developers
+
+- **Localhost is a workbench.** On `localhost`, `127.0.0.1` and `*.test`, `evaluate` is always allowed and the "wants to send / delete" prompts don't apply: it's your own app.
+- **See the whole request.** `network_requests` with `url` shows one request in full: request and response headers (cookies and authorization hidden) and bodies.
+- **Check every size.** `emulate` shows the agent's tab as an iPhone, iPad or Android phone, at any viewport, in dark mode or with reduced motion.
+- **Keep what the agent found as a test.** `export_test` turns the agent's steps in a tab into a Playwright test that uses role-based locators, with the agent's checks verified on the live page before they're written. Explore with an agent in your real browser, then run the test in CI with Playwright.
+
+### Keeps working while you're away
+
+Chromium stops delivering input to pages while the Mac's display is asleep or the screen is locked. Wink listens for each click, key press, hover, scroll or drag inside the page; if the real event never arrives, it plays the same events (pointer, mouse and keyboard, Enter's form submission, HTML5 drag and drop) from inside the page. A long agent task keeps going after the screen locks.
+
+JavaScript dialogs in a tab an agent is using wait for the agent (`handle_dialog`) instead of popping up as native alerts. If one appears while the agent is paused or gone, Wink asks you in its own prompt card.
 
 On a LinkedIn-style practice page, Claude Code sent four connection requests in 6 browser calls and 28 seconds, including one guardrail prompt. Screenshot-and-click loops took about five calls per person.
 
@@ -89,6 +109,8 @@ Model instructions are advice; these are rules Wink enforces whatever the agent 
 - **Consequential actions need a yes.** Before an agent clicks something that sends, posts, buys, deletes, connects or follows, or presses Enter to send a message, Wink asks: *Don't Allow / Allow Once / Allow on this site*. By default it asks once per site per agent session; Settings can make it ask every time or never. Detection uses the control's accessible name, in English plus common French, German, Spanish, Dutch and Italian verbs. Search forms are exempt.
 - **Hourly check-in.** After 30 consequential actions on one site within an hour (configurable: 10, 30, 100, never), the agent waits until you allow more or stop it. Sites restrict accounts that send too many invitations or messages, so this protects you as well as other people.
 - **You can take over.** Clicking or typing into a page an agent is driving pauses that agent, and so does the pill's Pause. While paused, its tool calls wait; Resume continues.
+- **Uploads need a yes.** Outside localhost, Wink asks before an agent attaches files to a page, naming the files and the site. Files in hidden folders (`~/.ssh`, `~/.aws`, …), `~/Library` and system folders can't be uploaded at all.
+- **Your own app is exempt.** On `localhost`, `127.0.0.1` and `*.test` the prompts and the hourly check-in don't apply.
 
 ## Consent and visibility
 

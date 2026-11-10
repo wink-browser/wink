@@ -10,6 +10,15 @@ enum Site {
     static func host(of urlString: String) -> String {
         URLComponents(string: urlString)?.host?.lowercased() ?? ""
     }
+
+    /// A site on this Mac that a developer is building: localhost, loopback
+    /// addresses, and the reserved .localhost / .test names.
+    static func isLocalDevelopment(_ host: String) -> Bool {
+        let h = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if h.isEmpty { return false }
+        if h == "localhost" || h == "::1" || h == "0.0.0.0" || h.hasPrefix("127.") { return true }
+        return h.hasSuffix(".localhost") || h.hasSuffix(".test")
+    }
 }
 
 enum URLInput {

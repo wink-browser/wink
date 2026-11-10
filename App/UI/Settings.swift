@@ -215,7 +215,7 @@ struct AgentSettings: View {
                     Text("A private, signed-out profile").tag(AgentBrowsingProfile.isolated)
                     Text("My profile and logins").tag(AgentBrowsingProfile.shared)
                 }
-                Toggle("Allow agents to run JavaScript in pages", isOn: $settings.allowAgentJavaScript)
+                Toggle("Allow agents to run JavaScript on any site (always allowed on localhost)", isOn: $settings.allowAgentJavaScript)
                     .onChange(of: settings.allowAgentJavaScript) { AgentHub.shared.refreshHandshake() }
                 ForEach(settings.agentProtectedSites, id: \.self) { site in
                     HStack {

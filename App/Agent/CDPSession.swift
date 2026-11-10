@@ -24,6 +24,7 @@ final class CDPSession {
     private weak var boundView: WinkWebView?
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<[String: Any], Error>] = [:]
+    private var pendingMethods: [Int: String] = [:]
     private var isolatedContextID: Int?
     /// Isolated world that already has PageScripts.library installed.
     private var libraryContextID: Int?
@@ -37,10 +38,26 @@ final class CDPSession {
     func reset() {
         let waiting = pending
         pending.removeAll()
+        pendingMethods.removeAll()
         waiting.values.forEach { $0.resume(throwing: CDPError(message: "The tab was closed or put to sleep.")) }
         isolatedContextID = nil
         libraryContextID = nil
         boundView = nil
+        tab?.instruments.cdpReset()
+    }
+
+    /// A JavaScript dialog blocks the page, so input commands in flight never
+    /// return until it's answered: stop waiting for them (their late replies
+    /// are ignored) so the agent can be told about the dialog.
+    func releaseBlockedInput() {
+        for (id, method) in pendingMethods where method.hasPrefix("Input.") || method == "Runtime.evaluate" {
+            pendingMethods.removeValue(forKey: id)
+            if method == "Runtime.evaluate" {
+                pending.removeValue(forKey: id)?.resume(throwing: CDPError(message: "A JavaScript dialog is open."))
+            } else {
+                pending.removeValue(forKey: id)?.resume(returning: [:])
+            }
+        }
     }
 
     func invalidateIsolatedWorld() {
@@ -66,13 +83,16 @@ final class CDPSession {
 
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
+            pendingMethods[id] = method
             if !view.sendDevToolsMessage(data) {
                 pending.removeValue(forKey: id)
+                pendingMethods.removeValue(forKey: id)
                 continuation.resume(throwing: CDPError(message: "Could not reach the page (\(method))."))
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard let self, let waiting = self.pending.removeValue(forKey: id) else { return }
+                self.pendingMethods.removeValue(forKey: id)
                 waiting.resume(throwing: CDPError(message: "\(method) timed out after \(Int(timeout))s."))
             }
         }
@@ -89,6 +109,7 @@ final class CDPSession {
     }
 
     private func handleResult(id: Int, success: Bool, data: Data) {
+        pendingMethods.removeValue(forKey: id)
         guard let continuation = pending.removeValue(forKey: id) else { return }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if success {
@@ -124,12 +145,12 @@ final class CDPSession {
     /// Evaluates `expression` in Wink's isolated world with the agent library
     /// (`__wink`) available. The ~25 KB library is sent once per document, not
     /// with every call.
-    func evaluateAgent(_ expression: String, awaitPromise: Bool = true) async throws -> Any? {
+    func evaluateAgent(_ expression: String, awaitPromise: Bool = true, timeout: TimeInterval = 30) async throws -> Any? {
         let contextID = try await isolatedContext()
         let needsLibrary = libraryContextID != contextID
         let source = needsLibrary ? PageScripts.library + ";\n" + expression : expression
         do {
-            let value = try await evaluate(source, contextID: contextID, awaitPromise: awaitPromise)
+            let value = try await evaluate(source, contextID: contextID, awaitPromise: awaitPromise, timeout: timeout)
             libraryContextID = contextID
             return value
         } catch let error as CDPError where error.isLostContext || error.message.contains("__wink is not defined") {
@@ -137,7 +158,7 @@ final class CDPSession {
             isolatedContextID = nil
             libraryContextID = nil
             let fresh = try await isolatedContext()
-            let value = try await evaluate(PageScripts.library + ";\n" + expression, contextID: fresh, awaitPromise: awaitPromise)
+            let value = try await evaluate(PageScripts.library + ";\n" + expression, contextID: fresh, awaitPromise: awaitPromise, timeout: timeout)
             libraryContextID = fresh
             return value
         } catch {
@@ -146,13 +167,13 @@ final class CDPSession {
         }
     }
 
-    private func evaluate(_ expression: String, contextID: Int, awaitPromise: Bool) async throws -> Any? {
+    private func evaluate(_ expression: String, contextID: Int, awaitPromise: Bool, timeout: TimeInterval = 30) async throws -> Any? {
         let result = try await send("Runtime.evaluate", [
             "expression": expression,
             "contextId": contextID,
             "returnByValue": true,
             "awaitPromise": awaitPromise,
-        ])
+        ], timeout: timeout)
         if let details = result["exceptionDetails"] as? [String: Any] {
             let exception = details["exception"] as? [String: Any]
             let text = exception?["description"] as? String ?? details["text"] as? String ?? "Script error"
@@ -161,6 +182,24 @@ final class CDPSession {
                 .replacingOccurrences(of: "Error: ", with: "", options: .anchored) ?? text)
         }
         return (result["result"] as? [String: Any])?["value"]
+    }
+
+    /// A remote object handle for what `expression` returns in the agent's
+    /// world (e.g. a DOM node for DOM.setFileInputFiles).
+    func agentObjectID(_ expression: String) async throws -> String {
+        _ = try await evaluateAgent("1")  // the library is installed
+        let contextID = try await isolatedContext()
+        let result = try await send("Runtime.evaluate", ["expression": expression, "contextId": contextID, "returnByValue": false])
+        if let details = result["exceptionDetails"] as? [String: Any] {
+            let exception = details["exception"] as? [String: Any]
+            let text = exception?["description"] as? String ?? details["text"] as? String ?? "Script error"
+            throw CDPError(message: text.components(separatedBy: "\n    at ").first?
+                .replacingOccurrences(of: "Error: ", with: "", options: .anchored) ?? text)
+        }
+        guard let id = (result["result"] as? [String: Any])?["objectId"] as? String else {
+            throw CDPError(message: "No element.")
+        }
+        return id
     }
 
     /// Evaluates in the page's own (main) world. Only for the explicitly
@@ -198,7 +237,7 @@ final class CDPSession {
     // MARK: - Input (trusted events, like a real user)
 
     func click(x: Double, y: Double, button: String = "left", clickCount: Int = 1) async throws {
-        _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y])
+        try await moveMouse(x: x, y: y)
         for count in 1...max(1, clickCount) {
             _ = try await send("Input.dispatchMouseEvent", [
                 "type": "mousePressed", "x": x, "y": y, "button": button, "clickCount": count,
@@ -209,8 +248,51 @@ final class CDPSession {
         }
     }
 
+    /// Presses at `from`, moves to `to` and releases. HTML5 drag and drop is
+    /// intercepted and replayed as drag events; pointer-based libraries see
+    /// the mouse moves.
+    func drag(from: CGPoint, to: CGPoint) async throws {
+        final class Box { var data: [String: Any]? }
+        let box = Box()
+        _ = try? await send("Input.setInterceptDrags", ["enabled": true])
+        let token = on("Input.dragIntercepted") { box.data = $0["data"] as? [String: Any] }
+        defer { off("Input.dragIntercepted", token) }
+        try await moveMouse(x: from.x, y: from.y)
+        _ = try await send("Input.dispatchMouseEvent", ["type": "mousePressed", "x": from.x, "y": from.y,
+                                                        "button": "left", "buttons": 1, "clickCount": 1])
+        let steps = 12
+        for i in 1...steps {
+            let t = Double(i) / Double(steps)
+            // Moves wait for frames; with none coming (display asleep), give up on them quickly.
+            let moved = (try? await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": from.x + (to.x - from.x) * t,
+                                                                      "y": from.y + (to.y - from.y) * t, "button": "left", "buttons": 1],
+                                         timeout: 0.6)) != nil
+            if !moved { break }
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            if box.data != nil { break }
+        }
+        if let data = box.data {
+            for type in ["dragEnter", "dragOver", "drop"] {
+                _ = try await send("Input.dispatchDragEvent", ["type": type, "x": to.x, "y": to.y, "data": data])
+            }
+        }
+        _ = try await send("Input.dispatchMouseEvent", ["type": "mouseReleased", "x": to.x, "y": to.y,
+                                                        "button": "left", "buttons": 0, "clickCount": 1])
+        _ = try? await send("Input.setInterceptDrags", ["enabled": false])
+    }
+
     func hover(x: Double, y: Double) async throws {
-        _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y])
+        try await moveMouse(x: x, y: y)
+    }
+
+    /// Mouse moves are delivered with the next frame; while the display sleeps
+    /// there are no frames, so don't wait long for one.
+    private func moveMouse(x: Double, y: Double) async throws {
+        do {
+            _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y], timeout: 0.6)
+        } catch let error as CDPError where error.message.contains("timed out") {
+            return
+        }
     }
 
     func scroll(x: Double, y: Double, deltaX: Double, deltaY: Double) async throws {

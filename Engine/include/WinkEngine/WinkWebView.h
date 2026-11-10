@@ -143,6 +143,13 @@ NS_SWIFT_UI_ACTOR
                     info:(WinkContextMenuInfo *)info;
 - (void)webView:(WinkWebView *)webView mediaAccessChangedVideo:(BOOL)video audio:(BOOL)audio;
 - (void)webViewDidReceiveFocus:(WinkWebView *)webView;
+/// While `agentHandlesDialogs`: a JavaScript dialog ("alert", "confirm",
+/// "prompt", "beforeunload") is waiting for -answerJavaScriptDialog:text:.
+- (void)webView:(WinkWebView *)webView
+    javaScriptDialogOpened:(NSString *)type
+                   message:(NSString *)message
+             defaultPrompt:(NSString *)defaultPrompt;
+- (void)webViewJavaScriptDialogClosed:(WinkWebView *)webView;
 /// Raw Chrome DevTools Protocol event (only when `devToolsEventsEnabled`).
 - (void)webView:(WinkWebView *)webView
     didReceiveDevToolsEvent:(NSString *)method
@@ -216,6 +223,11 @@ NS_SWIFT_UI_ACTOR
 @property (nonatomic, copy, nullable) void (^devToolsResultHandler)(NSInteger messageId, BOOL success, NSData *result);
 /// When YES, CDP events are forwarded to the delegate.
 @property (nonatomic) BOOL devToolsEventsEnabled;
+/// While an agent controls the tab: JavaScript dialogs go to the delegate
+/// instead of showing as native alerts. Turning it off dismisses one that's open.
+@property (nonatomic) BOOL agentHandlesDialogs;
+/// Answers the held dialog (OK/Cancel, with text for a prompt). NO if none is open.
+- (BOOL)answerJavaScriptDialog:(BOOL)accept text:(nullable NSString *)text;
 
 // --- Privacy / diagnostics --------------------------------------------------
 

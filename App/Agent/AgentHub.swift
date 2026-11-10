@@ -139,6 +139,11 @@ final class AgentHub {
             tab.agentAction = nil
             setIdle(tab)
         }
+        // Tabs no other agent is using get their own dialogs back.
+        for tab in AppDelegate.shared?.allTabs ?? [] where tab.agentSessionID == session.id || tab.agentOwnerID == session.id {
+            let othersHere = sessions.contains { $0.id == tab.agentSessionID || $0.id == tab.agentOwnerID }
+            if !othersHere { tab.instruments.release() }
+        }
     }
 
     /// Engines register a closure that cancels their in-flight work on Stop.

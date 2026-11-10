@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.29)
 # not enable the OBJCXX language) so CEF's wrapper and our engine share flags.
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
-project(Wink VERSION 0.5.0 LANGUAGES C CXX Swift)
+project(Wink VERSION 0.6.0 LANGUAGES C CXX Swift)
 
 if(NOT APPLE)
   message(FATAL_ERROR "Wink currently targets macOS only.")

@@ -48,7 +48,7 @@ struct AgentToolResult {
 enum BrowserTools {
     private static let tabID: [String: Any] = [
         "type": "string",
-        "description": "Tab to act on (from tabs_list / tab_open). Defaults to the tab you used last.",
+        "description": "Tab id (default: your last tab).",
     ]
     private static func prop(_ type: String, _ description: String) -> [String: Any] {
         ["type": type, "description": description]
@@ -59,132 +59,164 @@ enum BrowserTools {
         "properties": [
             "action": ["type": "string", "enum": ["click", "type", "press_key", "select_option", "hover", "scroll", "wait_for", "navigate"]],
             "ref": prop("string", "Element ref."),
-            "text": prop("string", "click: visible label to click. type: text to type. wait_for: text to wait for."),
-            "x": prop("number", "click: x in your latest screenshot."),
-            "y": prop("number", "click: y in your latest screenshot."),
-            "key": prop("string", "press_key: key or shortcut."),
-            "value": prop("string", "select_option: option value or label."),
-            "url": prop("string", "navigate: absolute URL."),
+            "text": prop("string", "click: label to click; type: text; wait_for: text."),
+            "x": prop("number", "click: x."), "y": prop("number", "click: y."),
+            "key": prop("string", "press_key: key."),
+            "value": prop("string", "select_option: option."),
+            "url": prop("string", "navigate: URL."),
             "direction": ["type": "string", "enum": ["up", "down", "left", "right", "top", "bottom"]],
             "amount": prop("integer", "scroll: pixels."),
-            "clear": prop("boolean", "type: replace existing text (default true)."),
-            "submit": prop("boolean", "type: press Enter after typing."),
+            "clear": prop("boolean", "type: replace text (default true)."),
+            "submit": prop("boolean", "type: press Enter after."),
             "selector": prop("string", "wait_for: CSS selector."),
-            "gone": prop("boolean", "wait_for: wait for it to disappear."),
-            "timeout_ms": prop("integer", "wait_for: maximum wait."),
+            "gone": prop("boolean", "wait_for: until gone."),
+            "timeout_ms": prop("integer", "wait_for: max wait."),
             "double_click": prop("boolean", "click: double-click."),
         ],
         "required": ["action"],
         "additionalProperties": false,
     ]
 
+    private static let expectSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "text": prop("string", "Text that must be on the page."),
+            "ref": prop("string", "Element to check."),
+            "checked": prop("boolean", "ref is checked / unchecked."),
+            "value": prop("string", "ref has this value."),
+            "visible": prop("boolean", "ref is visible / hidden."),
+        ],
+        "additionalProperties": false,
+    ]
+
     static let definitions: [AgentToolDefinition] = [
-        .init(name: "tabs_list",
-              description: "List the browser tabs you can use: tabs you opened and tabs the user shared with you. The user's other tabs are private.",
+        .init(name: "tabs_list", description: "List the tabs you can use: yours and ones the user shared.",
               properties: [:], required: [], readOnly: true),
         .init(name: "get_active_tab",
-              description: "Ask for access to the tab the user is currently looking at (the user may be asked to approve). Use when the user refers to 'this page' or 'my tab'.",
+              description: "Ask for the tab the user is viewing (they may be asked). Use when they say 'this page'.",
               properties: [:], required: [], readOnly: true),
-        .init(name: "tab_open",
-              description: "Open a URL in a new tab that belongs to you, and wait for it to load. Returns its tab_id.",
-              properties: ["url": prop("string", "Absolute http(s) URL to open."),
-                           "focus": prop("boolean", "Show the tab to the user (default false: opens in the background).")],
+        .init(name: "tab_open", description: "Open a URL in a new tab of yours and wait for it to load. Returns its tab_id.",
+              properties: ["url": prop("string", "Absolute URL."),
+                           "focus": prop("boolean", "Show it to the user (default: background).")],
               required: ["url"], readOnly: false),
         .init(name: "tab_close", description: "Close a tab you opened.",
               properties: ["tab_id": tabID], required: ["tab_id"], readOnly: false),
-        .init(name: "tab_focus", description: "Bring a tab to the front so the user can see it.",
+        .init(name: "tab_focus", description: "Show a tab to the user.",
               properties: ["tab_id": tabID], required: ["tab_id"], readOnly: false),
-        .init(name: "navigate", description: "Load a URL in a tab and wait for the page to finish loading.",
-              properties: ["url": prop("string", "Absolute http(s) URL."), "tab_id": tabID],
-              required: ["url"], readOnly: false),
-        .init(name: "go_back", description: "Go back in the tab's history.",
-              properties: ["tab_id": tabID], required: [], readOnly: false),
-        .init(name: "go_forward", description: "Go forward in the tab's history.",
-              properties: ["tab_id": tabID], required: [], readOnly: false),
-        .init(name: "reload", description: "Reload the page.",
-              properties: ["tab_id": tabID], required: [], readOnly: false),
+        .init(name: "navigate", description: "Load a URL in the tab and wait for it.",
+              properties: ["url": prop("string", "Absolute URL."), "tab_id": tabID], required: ["url"], readOnly: false),
+        .init(name: "go_back", description: "Go back.", properties: ["tab_id": tabID], required: [], readOnly: false),
+        .init(name: "go_forward", description: "Go forward.", properties: ["tab_id": tabID], required: [], readOnly: false),
+        .init(name: "reload", description: "Reload the page.", properties: ["tab_id": tabID], required: [], readOnly: false),
         .init(name: "find",
-              description: "Find interactive elements whose label or text contains `text` (e.g. every \"Connect\" button) and get their refs plus the card or row each sits in. Much faster and smaller than a snapshot; use it to target repeated items.",
+              description: "Find elements whose label or text contains `text`: refs plus the row or card each sits in. Much cheaper than snapshot.",
               properties: ["text": prop("string", "Text to look for (case-insensitive)."),
-                           "role": prop("string", "Optional role filter: button, link, textbox, checkbox, heading, …"),
-                           "max": prop("integer", "Maximum matches (default 25)."), "tab_id": tabID],
+                           "role": prop("string", "Role filter: button, link, textbox, checkbox, heading…"),
+                           "max": prop("integer", "Max matches (default 25)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "snapshot",
-              description: "Describe the whole page as an accessibility outline (headings, text, links, buttons, inputs) with element refs like [ref=e12]. Use for an overview; prefer find for specific elements. Actions already report what they changed, so you rarely need a snapshot after one.",
-              properties: ["tab_id": tabID,
-                           "viewport_only": prop("boolean", "Only include what is currently scrolled into view (smaller output)."),
-                           "max_lines": prop("integer", "Maximum outline lines (default 500).")],
+              description: "Accessibility outline of the page with refs, for an overview. Actions already report what they changed.",
+              properties: ["viewport_only": prop("boolean", "Only what's scrolled into view."),
+                           "max_lines": prop("integer", "Max lines (default 500)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "read_page",
-              description: "Extract the page's main readable content as Markdown (articles, docs, search results). Best for reading; use find/snapshot for interacting.",
-              properties: ["tab_id": tabID, "max_chars": prop("integer", "Maximum characters (default 20000).")],
+              description: "The page's readable content as Markdown. With match, only the paragraphs, list items and table rows that mention it: the cheap way to read one fact from a long page.",
+              properties: ["match": prop("string", "Only parts containing this (case-insensitive)."),
+                           "max_chars": prop("integer", "Max characters (default 20000)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "screenshot",
-              description: "Capture what the tab shows as a JPEG. One image pixel is one CSS pixel, so x/y read off the image can be passed to click directly. labels:true draws each clickable element's ref on the image, so you can click by ref instead of coordinates.",
-              properties: ["tab_id": tabID,
-                           "labels": prop("boolean", "Overlay element refs on the image."),
-                           "full_page": prop("boolean", "Capture the whole scrollable page instead of the viewport.")],
+              description: "JPEG of the tab. Image pixels = CSS pixels, so x/y can go straight to click; labels:true draws refs.",
+              properties: ["labels": prop("boolean", "Draw element refs."),
+                           "full_page": prop("boolean", "Whole page, not just the viewport."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "click",
-              description: "Click an element by ref (preferred), by visible label text, or at x/y from your latest screenshot. Waits for the page to react and returns what changed (opened dialogs with their buttons' refs, notices, updated buttons), so you can chain the next step without a new snapshot or screenshot.",
+              description: "Click by ref (best), visible text, or x/y. Returns what changed: dialogs, notices, new/changed/gone elements, updated texts. Refs survive re-renders.",
               properties: ["ref": prop("string", "Element ref, e.g. e12."),
-                           "text": prop("string", "Visible label of a link/button to click if you have no ref."),
-                           "x": prop("number", "x in your latest screenshot (= CSS pixels)."),
-                           "y": prop("number", "y in your latest screenshot (= CSS pixels)."),
-                           "double_click": prop("boolean", "Double-click instead of single click."),
-                           "tab_id": tabID],
+                           "text": prop("string", "Visible label, if you have no ref."),
+                           "x": prop("number", "x from your latest screenshot."), "y": prop("number", "y."),
+                           "double_click": prop("boolean", "Double-click."),
+                           "button": ["type": "string", "enum": ["left", "right", "middle"]], "tab_id": tabID],
               required: [], readOnly: false),
         .init(name: "type",
-              description: "Type text into an input, textarea or editable element (by ref). Replaces existing text unless clear is false. Returns what changed (e.g. suggestions that appeared).",
-              properties: ["ref": prop("string", "Element ref."),
-                           "text": prop("string", "Text to type."),
-                           "clear": prop("boolean", "Replace the current value (default true)."),
-                           "submit": prop("boolean", "Press Enter after typing."),
-                           "tab_id": tabID],
+              description: "Type into a field by ref; replaces its text unless clear:false, submit:true presses Enter. Checks the text landed.",
+              properties: ["ref": prop("string", "Field ref."), "text": prop("string", "Text."),
+                           "clear": prop("boolean", "Replace current text (default true)."),
+                           "submit": prop("boolean", "Press Enter after."), "tab_id": tabID],
               required: ["ref", "text"], readOnly: false),
-        .init(name: "press_key",
-              description: "Press a key or shortcut in the page, e.g. Enter, Escape, Tab, ArrowDown, PageDown, Meta+A. Returns what changed.",
-              properties: ["key": prop("string", "Key name, optionally with modifiers joined by '+'."), "tab_id": tabID],
+        .init(name: "fill_form",
+              description: "Fill many fields in one call. value: text for text fields, an option for selects, true/false for checkboxes, radios and switches.",
+              properties: ["fields": ["type": "array", "description": "Fields in order.",
+                                      "items": ["type": "object", "properties": ["ref": prop("string", "Field ref."), "value": prop("string", "Value.")],
+                                                "required": ["ref", "value"], "additionalProperties": false]],
+                           "tab_id": tabID],
+              required: ["fields"], readOnly: false),
+        .init(name: "press_key", description: "Press a key or shortcut: Enter, Escape, Tab, ArrowDown, Meta+A…",
+              properties: ["key": prop("string", "Key, modifiers joined by '+'."), "tab_id": tabID],
               required: ["key"], readOnly: false),
-        .init(name: "select_option", description: "Choose an option in a <select> dropdown by its value or visible text.",
-              properties: ["ref": prop("string", "Ref of the select element."),
-                           "value": prop("string", "Option value or label."), "tab_id": tabID],
+        .init(name: "select_option", description: "Choose a <select> option by value or text.",
+              properties: ["ref": prop("string", "Select ref."), "value": prop("string", "Option."), "tab_id": tabID],
               required: ["ref", "value"], readOnly: false),
-        .init(name: "hover", description: "Move the mouse over an element; returns any menu or tooltip that opened.",
+        .init(name: "hover", description: "Hover an element; returns menus or tooltips that opened.",
               properties: ["ref": prop("string", "Element ref."), "tab_id": tabID], required: ["ref"], readOnly: false),
-        .init(name: "scroll",
-              description: "Scroll the page (or a scrollable element by ref). Returns the new position and newly loaded items.",
+        .init(name: "drag", description: "Drag an element onto another (HTML5 drag and drop or pointer-based). Give each end by ref or by visible text.",
+              properties: ["from_ref": prop("string", "What to drag."), "to_ref": prop("string", "Where to drop it."),
+                           "from_text": prop("string", "Or: text shown on what to drag."),
+                           "to_text": prop("string", "Or: text shown where to drop (e.g. a column title)."), "tab_id": tabID],
+              required: [], readOnly: false),
+        .init(name: "upload_file",
+              description: "Attach files to a file input (its ref, or its button's). Outside localhost the user approves.",
+              properties: ["ref": prop("string", "File input or upload button ref."),
+                           "paths": ["type": "array", "items": ["type": "string"], "description": "Absolute file paths."],
+                           "tab_id": tabID],
+              required: ["ref", "paths"], readOnly: false),
+        .init(name: "scroll", description: "Scroll the page, or an element by ref. Returns the position and new items.",
               properties: ["direction": ["type": "string", "enum": ["up", "down", "left", "right", "top", "bottom"]],
-                           "amount": prop("integer", "Pixels to scroll (default: most of a screen)."),
-                           "ref": prop("string", "Scrollable element ref (optional)."), "tab_id": tabID],
+                           "amount": prop("integer", "Pixels (default: most of a screen)."),
+                           "ref": prop("string", "Scrollable element."), "tab_id": tabID],
               required: ["direction"], readOnly: false),
         .init(name: "batch",
-              description: "Run up to 25 steps (click, type, press_key, select_option, hover, scroll, wait_for, navigate) in one call, each waiting for the page to settle. Stops at the first failure and reports every step's result and changes. Use it for known sequences, e.g. click a Connect button then the dialog's \"Send\" by text. Each step takes the same fields as its tool.",
-              properties: ["steps": ["type": "array", "items": stepSchema, "description": "Steps to run in order."],
-                           "tab_id": tabID],
+              description: "Run up to 25 steps in one call (click, type, press_key, select_option, hover, scroll, wait_for, navigate), each settling first; stops at the first failure. Steps take their tool's fields.",
+              properties: ["steps": ["type": "array", "items": stepSchema, "description": "Steps in order."], "tab_id": tabID],
               required: ["steps"], readOnly: false),
-        .init(name: "wait_for",
-              description: "Wait until text or a CSS selector appears (or disappears) on the page.",
-              properties: ["text": prop("string", "Text to wait for."),
-                           "selector": prop("string", "CSS selector to wait for."),
-                           "gone": prop("boolean", "Wait for it to disappear instead."),
-                           "timeout_ms": prop("integer", "Maximum wait (default 10000, max 60000)."), "tab_id": tabID],
+        .init(name: "wait_for", description: "Wait for text or a CSS selector to appear (gone:true: disappear).",
+              properties: ["text": prop("string", "Text."), "selector": prop("string", "CSS selector."),
+                           "gone": prop("boolean", "Wait until gone."),
+                           "timeout_ms": prop("integer", "Max wait (default 10000, max 60000)."), "tab_id": tabID],
               required: [], readOnly: true),
-        .init(name: "get_selection", description: "Return the text the user has selected in the tab.",
+        .init(name: "handle_dialog", description: "Answer the open JavaScript alert, confirm or prompt.",
+              properties: ["accept": prop("boolean", "OK (true) or Cancel (false)."),
+                           "prompt_text": prop("string", "Text for a prompt."), "tab_id": tabID],
+              required: ["accept"], readOnly: false),
+        .init(name: "get_selection", description: "The text the user selected in the tab.",
               properties: ["tab_id": tabID], required: [], readOnly: true),
-        .init(name: "console_logs", description: "Recent JavaScript console messages from the tab (great for debugging web apps).",
+        .init(name: "console_logs", description: "The tab's console messages.",
               properties: ["level": ["type": "string", "enum": ["error", "warning", "all"]],
-                           "limit": prop("integer", "Maximum entries (default 50)."), "tab_id": tabID],
+                           "limit": prop("integer", "Max entries (default 50)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "network_requests",
-              description: "Recent network requests made by the page: URL, status, type, size; including failed and blocked ones.",
+              description: "Requests the page made (method, status, type, size, URL), failed and blocked ones included. url: one request in full, with headers and request and response bodies.",
               properties: ["filter": ["type": "string", "enum": ["all", "failed", "fetch", "blocked"]],
-                           "limit": prop("integer", "Maximum entries (default 50)."), "tab_id": tabID],
+                           "url": prop("string", "Part of a request's URL, for its full details."),
+                           "limit": prop("integer", "Max entries (default 50)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "evaluate",
-              description: "Run a JavaScript expression in the page and return its JSON result. Only available if the user enabled it in Wink settings.",
-              properties: ["expression": prop("string", "JavaScript expression; may return a Promise."), "tab_id": tabID],
+              description: "Run JavaScript in the page; returns the JSON result. Always allowed on localhost, 127.0.0.1 and *.test; elsewhere only if the user enabled it.",
+              properties: ["expression": prop("string", "Expression; may return a Promise."), "tab_id": tabID],
               required: ["expression"], readOnly: false),
+        .init(name: "emulate",
+              description: "Make your tab look like a phone, tablet or other size, in dark mode or with reduced motion. reset:true undoes it.",
+              properties: ["device": ["type": "string", "enum": ["iphone", "ipad", "android", "desktop"]],
+                           "width": prop("integer", "Viewport width."), "height": prop("integer", "Viewport height."),
+                           "color_scheme": ["type": "string", "enum": ["light", "dark"]],
+                           "reduced_motion": prop("boolean", "Prefer reduced motion."),
+                           "reset": prop("boolean", "Back to normal."), "tab_id": tabID],
+              required: [], readOnly: false),
+        .init(name: "export_test",
+              description: "Turn the steps you took in this tab into a Playwright test (TypeScript), with expect checks verified on the live page first. Save it with your own file tools.",
+              properties: ["name": prop("string", "Test name."),
+                           "expect": ["type": "array", "items": expectSchema, "description": "Checks to end the test with."],
+                           "tab_id": tabID],
+              required: [], readOnly: true),
     ]
 
     /// Permission hook for Claude Code sessions launched by Wink
@@ -204,9 +236,7 @@ enum BrowserTools {
     }
 
     /// The tools any connected agent gets.
-    static var externalDefinitions: [AgentToolDefinition] {
-        WinkSettings.shared.allowAgentJavaScript ? definitions : definitions.filter { $0.name != "evaluate" }
-    }
+    static var externalDefinitions: [AgentToolDefinition] { definitions }
 
     /// SF Symbol for a tool, shared by the activity log and the agent panel.
     static func symbol(for tool: String) -> String {
@@ -232,6 +262,12 @@ enum BrowserTools {
         case "console_logs": "terminal"
         case "network_requests": "network"
         case "evaluate": "curlybraces"
+        case "fill_form": "list.bullet.rectangle"
+        case "drag": "hand.draw"
+        case "upload_file": "paperclip"
+        case "handle_dialog": "exclamationmark.bubble"
+        case "emulate": "iphone"
+        case "export_test": "checkmark.seal"
         case "tabs_list", "get_active_tab": "square.on.square"
         default: "sparkle"
         }
@@ -259,6 +295,12 @@ enum BrowserTools {
                 let tab = try await accessTab(args, session, purpose: "control")
                 return .text(try await perform(name, args, session, tab, inBatch: false))
             case "batch": return try await batch(args, session)
+            case "fill_form": return try await fillForm(args, session)
+            case "drag": return try await drag(args, session)
+            case "upload_file": return try await uploadFile(args, session)
+            case "handle_dialog": return try await handleDialog(args, session)
+            case "emulate": return try await emulate(args, session)
+            case "export_test": return try await exportTest(args, session)
             case "wait_for": return try await waitFor(args, session)
             case "get_selection": return try await getSelection(args, session)
             case "console_logs": return try await consoleLogs(args, session)
@@ -319,6 +361,7 @@ enum BrowserTools {
         try await AgentHub.shared.waitWhilePaused(session)
         session.currentTabID = tab.id
         try await ensureLive(tab)
+        await tab.instruments.start()
         return tab
     }
 
@@ -356,7 +399,7 @@ enum BrowserTools {
         try? await Task.sleep(nanoseconds: 60_000_000)
     }
 
-    private enum Settled { case navigated, quiet, idle, busy }
+    private enum Settled { case navigated, quiet, idle, busy, dialog }
 
     /// Waits for the page to react to an action: a navigation (then its load),
     /// or DOM mutations going quiet. Polled from Swift, so pages in background
@@ -369,9 +412,11 @@ enum BrowserTools {
         let maximum = patient ? 4.0 : 1.8
         while true {
             try? await Task.sleep(nanoseconds: 35_000_000)
+            if tab.instruments.dialog != nil { return .dialog }
             if tab.isLoading { break }
             let elapsed = Date().timeIntervalSince(start)
-            let value = (try? await tab.cdp.evaluateAgent("__wink.muts()")) as? [Any]
+            let value = (try? await tab.cdp.evaluateAgent("__wink.muts()", timeout: 5)) as? [Any]
+            if tab.instruments.dialog != nil { return .dialog }
             let count = (value?.first as? NSNumber)?.intValue ?? -1
             let since = ((value?.last as? NSNumber)?.doubleValue ?? 0) / 1000
             if count < 0 {
@@ -391,6 +436,10 @@ enum BrowserTools {
     }
 
     private static func changes(_ tab: Tab, _ settled: Settled, near target: Target?, limit: Int) async -> String {
+        if settled == .dialog, let dialog = tab.instruments.dialog {
+            let kind = dialog.type == "beforeunload" ? "“Leave page?” dialog" : "JavaScript \(dialog.type)"
+            return "\n\(kind) is open: “\(dialog.message.prefix(300))”. The page waits until you answer with handle_dialog (accept true or false)."
+        }
         if settled == .navigated {
             if let failure = tab.loadFailure {
                 return "\nNavigation failed: \(failure.description.isEmpty ? "error \(failure.code)" : failure.description)"
@@ -423,7 +472,61 @@ enum BrowserTools {
     }
 
     private static func js(_ tab: Tab, _ expression: String) async throws -> Any? {
-        try await tab.cdp.evaluateAgent(expression)
+        if let dialog = tab.instruments.dialog {
+            throw AgentAccessError(message: "A JavaScript \(dialog.type) is open (“\(dialog.message.prefix(120))”) and the page is waiting. Answer it with handle_dialog first.")
+        }
+        return try await tab.cdp.evaluateAgent(expression)
+    }
+
+    /// Real (trusted) input first. If the page never saw it (Chromium drops
+    /// input while the Mac's display sleeps or the screen is locked), the same
+    /// events are played from inside the page, so agents keep working while
+    /// the user is away.
+    private static func deliver(_ tab: Tab, expecting event: String, fallback: String,
+                                _ trusted: () async throws -> Void) async throws {
+        _ = try? await js(tab, "__wink.armInput(\(jsString(event)))")
+        try await trusted()
+        if tab.instruments.dialog != nil { return }  // it worked: a dialog opened
+        let arrived = (try? await tab.cdp.evaluateAgent("__wink.inputArrived()", timeout: 3)) as? Bool ?? true
+        if arrived { return }
+        do {
+            _ = try await js(tab, fallback)
+        } catch where tab.instruments.dialog != nil {
+            // The replayed input opened a JavaScript dialog: that's its effect.
+        }
+    }
+
+    private static func pressKey(_ tab: Tab, _ combo: String) async throws {
+        let key = KeyDescriptor.parse(combo)
+        let fallback = "__wink.syntheticKey(\(jsString(key.key)), \(jsString(key.code)), \(key.keyCode), \(key.text.map(jsString) ?? "null"), \(key.modifiers))"
+        try await deliver(tab, expecting: "keydown", fallback: fallback) { try await tab.cdp.press(combo) }
+    }
+
+    /// How a Playwright test should find the element behind a ref.
+    private static func locator(_ tab: Tab, _ ref: String?) async -> [String: Any]? {
+        guard let ref else { return nil }
+        return (try? await js(tab, "__wink.locatorOf(\(jsString(ref)))")) as? [String: Any]
+    }
+
+    /// Clicks into the field and types like a person, then checks the text
+    /// landed; if it didn't (custom inputs, lost focus), sets it directly.
+    /// Returns a note for the agent, empty when all went well.
+    private static func typeVerified(_ tab: Tab, target: Target, ref: String, text: String, clear: Bool) async throws -> String {
+        try await tab.cdp.click(x: target.point.x, y: target.point.y)
+        _ = try await js(tab, "__wink.prepareTyping(\(jsString(ref)), \(clear))")
+        try await tab.cdp.insertText(text)
+        let normalize = { (value: String) in value.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined() }
+        let want = normalize(text)
+        let landed = { (value: String) in want.isEmpty || normalize(value).contains(want) }
+        let read = { (try? await js(tab, "__wink.valueOf(\(jsString(ref)))")) as? String ?? "" }
+        if landed(await read()) { return "" }
+        try? await Task.sleep(nanoseconds: 80_000_000)  // debounced inputs
+        if landed(await read()) { return "" }
+        let after = (try? await js(tab, "__wink.setValue(\(jsString(ref)), \(jsString(text)), \(clear))")) as? String ?? ""
+        if landed(after) { return " (Set directly: the field didn't take keystrokes.)" }
+        return target.sensitive
+            ? " Warning: the field may not have accepted the text."
+            : " Warning: the field shows “\(after.prefix(60))”, not the typed text; it may format or reject input."
     }
 
     private static func jsString(_ value: String) -> String {
@@ -494,7 +597,9 @@ enum BrowserTools {
         }
         return try await run(session, tab, "Opening \(URLInput.display(url))", symbol: symbol(for: "tab_open")) {
             try await poll(timeout: 15) { tab.webView?.hasBrowser == true }
+            await tab.instruments.start()
             await settleNavigation(tab, since: issued, startedWithin: 3)
+            tab.instruments.record(.init(kind: .goto, locator: [:], value: url), session: session)
             return .text("Opened \(describe(tab, session: session))\n\(pageStatus(tab))\nNext: find, snapshot or read_page.")
         }
     }
@@ -519,6 +624,7 @@ enum BrowserTools {
             let issued = Date()
             tab.load(url)
             await settleNavigation(tab, since: issued)
+            tab.instruments.record(.init(kind: .goto, locator: [:], value: url), session: session)
             return pageStatus(tab)
         }
     }
@@ -535,6 +641,8 @@ enum BrowserTools {
             default: tab.reload()
             }
             await settleNavigation(tab, since: issued, startedWithin: 1.0)
+            let kind: AgentInstruments.Step.Kind = action == "go_back" ? .back : action == "go_forward" ? .forward : .reload
+            tab.instruments.record(.init(kind: kind, locator: [:], value: ""), session: session)
             return .text(pageStatus(tab))
         }
     }
@@ -569,9 +677,10 @@ enum BrowserTools {
     private static func readPage(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
         let tab = try await accessTab(args, session, purpose: "read")
         let maxChars = min(max(int(args, "max_chars") ?? 20_000, 1000), 200_000)
-        return try await run(session, tab, "Reading the page", symbol: symbol(for: "read_page")) {
+        let match = string(args, "match") ?? ""
+        return try await run(session, tab, match.isEmpty ? "Reading the page" : "Looking for “\(match.prefix(30))”", symbol: symbol(for: "read_page")) {
             AgentVisuals.scan(tab)
-            let result = try await js(tab, "__wink.read(\(maxChars))")
+            let result = try await js(tab, "__wink.read(\(maxChars), \(jsString(match)))")
             return .text(result as? String ?? "(no readable text)")
         }
     }
@@ -749,19 +858,33 @@ enum BrowserTools {
     private static func perform(_ action: String, _ args: [String: Any], _ session: AgentSession, _ tab: Tab,
                                 inBatch: Bool) async throws -> String {
         let limit = inBatch ? 10 : 22
+        let recorder = tab.instruments
+        if recorder.steps(for: session).isEmpty, !tab.url.isEmpty {
+            recorder.record(.init(kind: .goto, locator: [:], value: tab.url), session: session)
+        }
         switch action {
         case "click":
             let target = try await resolveTarget(tab, args, wait: inBatch ? 4 : 1.5)
-            let clicks = (bool(args, "double_click") ?? false) ? 2 : 1
-            return try await act(session, tab, "Clicking \(target.label)", tool: "click", target: target,
-                                 risk: target.risk, changeLimit: limit) {
+            let double = bool(args, "double_click") ?? false
+            let clicks = double ? 2 : 1
+            let button = string(args, "button") ?? "left"
+            let locator = await locator(tab, target.ref)
+            let result = try await act(session, tab, "Clicking \(target.label)", tool: "click", target: target,
+                                       risk: target.risk, changeLimit: limit) {
                 AgentVisuals.press(tab, at: target.point)
-                try await tab.cdp.click(x: target.point.x, y: target.point.y, clickCount: clicks)
+                try await deliver(tab, expecting: button == "right" ? "contextmenu" : "mousedown",
+                                  fallback: "__wink.syntheticClick(\(target.point.x), \(target.point.y), \(jsString(button)), \(clicks))") {
+                    try await tab.cdp.click(x: target.point.x, y: target.point.y, button: button, clickCount: clicks)
+                }
                 var line = "Clicked \(target.phrase)"
                 if let ref = target.ref { line += " [ref=\(ref)]" }
                 if let cover = target.obscuredBy { line += ". Note: the click point was covered by \(cover)" }
                 return line + "."
             }
+            if let locator {
+                recorder.record(.init(kind: double ? .doubleClick : .click, locator: locator, value: button), session: session)
+            }
+            return result
 
         case "type":
             guard let ref = string(args, "ref"), let text = args["text"] as? String else {
@@ -779,55 +902,71 @@ enum BrowserTools {
             }
             let clear = bool(args, "clear") ?? true
             let submit = bool(args, "submit") ?? false
-            return try await act(session, tab, "Typing into \(target.label)", tool: "type", target: target,
-                                 risk: nil, changeLimit: limit) {
+            let locator = await locator(tab, ref)
+            let result = try await act(session, tab, "Typing into \(target.label)", tool: "type", target: target,
+                                       risk: nil, changeLimit: limit) {
                 AgentVisuals.typing(tab, in: target.rect, text: target.sensitive ? nil : text)
-                try await tab.cdp.click(x: target.point.x, y: target.point.y)
-                _ = try await js(tab, "__wink.prepareTyping(\(jsString(ref)), \(clear))")
-                try await tab.cdp.insertText(text)
+                let note = try await typeVerified(tab, target: target, ref: ref, text: text, clear: clear)
                 let shown = target.sensitive ? "(hidden)" : "“\(text.prefix(60))”"
-                var line = "Typed \(shown) into \(target.label)."
+                var line = "Typed \(shown) into \(target.label).\(note)"
                 if submit {
                     if let risk = ConsequentialAction(try? await js(tab, "__wink.enterRisk()")) {
                         try await Guardrails.check(risk, session: session, tab: tab, verb: "press")
                     }
                     _ = try? await js(tab, "__wink.watch()")
-                    try await tab.cdp.press("Enter")
+                    try await pressKey(tab, "Enter")
                     line += " Pressed Enter."
                 }
                 return line
             }
+            if let locator {
+                recorder.record(.init(kind: .fill, locator: locator, value: text, sensitive: target.sensitive), session: session)
+                if submit { recorder.record(.init(kind: .press, locator: locator, value: "Enter"), session: session) }
+            }
+            return result
 
         case "press_key", "press":
             guard let key = string(args, "key") else { throw AgentAccessError(message: "press_key needs key.") }
             let lower = key.lowercased()
             let isEnter = lower.hasSuffix("enter") || lower.hasSuffix("return")
             let risk = isEnter ? ConsequentialAction(try? await js(tab, "__wink.enterRisk()")) : nil
-            return try await act(session, tab, "Pressing \(key)", tool: "press_key", target: nil, risk: risk,
-                                 riskVerb: "press", changeLimit: limit) {
-                try await tab.cdp.press(key)
+            let result = try await act(session, tab, "Pressing \(key)", tool: "press_key", target: nil, risk: risk,
+                                       riskVerb: "press", changeLimit: limit) {
+                try await pressKey(tab, key)
                 return "Pressed \(key)."
             }
+            recorder.record(.init(kind: .press, locator: [:], value: key), session: session)
+            return result
 
         case "select_option", "select":
             guard let ref = string(args, "ref"), let value = args["value"] as? String else {
                 throw AgentAccessError(message: "select_option needs ref and value.")
             }
             let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
-            return try await act(session, tab, "Choosing “\(value.prefix(30))”", tool: "select_option", target: target,
-                                 risk: nil, changeLimit: limit) {
+            let locator = await locator(tab, ref)
+            var chosenLabel = value
+            let result = try await act(session, tab, "Choosing “\(value.prefix(30))”", tool: "select_option", target: target,
+                                       risk: nil, changeLimit: limit) {
                 let chosen = try await js(tab, "__wink.selectOption(\(jsString(ref)), \(jsString(value)))") as? String ?? value
+                chosenLabel = chosen
                 return "Selected “\(chosen)” in \(target.label)."
             }
+            if let locator { recorder.record(.init(kind: .select, locator: locator, value: chosenLabel), session: session) }
+            return result
 
         case "hover":
             guard let ref = string(args, "ref") else { throw AgentAccessError(message: "hover needs ref.") }
             let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
-            return try await act(session, tab, "Pointing at \(target.label)", tool: "hover", target: target,
-                                 risk: nil, changeLimit: limit) {
-                try await tab.cdp.hover(x: target.point.x, y: target.point.y)
+            let locator = await locator(tab, ref)
+            let result = try await act(session, tab, "Pointing at \(target.label)", tool: "hover", target: target,
+                                       risk: nil, changeLimit: limit) {
+                try await deliver(tab, expecting: "mouseover", fallback: "__wink.syntheticHover(\(target.point.x), \(target.point.y))") {
+                    try await tab.cdp.hover(x: target.point.x, y: target.point.y)
+                }
                 return "Hovering over \(target.phrase)."
             }
+            if let locator { recorder.record(.init(kind: .hover, locator: locator, value: ""), session: session) }
+            return result
 
         case "scroll":
             let direction = string(args, "direction") ?? "down"
@@ -853,7 +992,9 @@ enum BrowserTools {
                 default: (0, delta)
                 }
                 AgentVisuals.scroll(tab, at: CGPoint(x: width / 2, y: height / 2), deltaY: dy)
-                try await tab.cdp.scroll(x: width / 2, y: height / 2, deltaX: dx, deltaY: dy)
+                try await deliver(tab, expecting: "wheel", fallback: "__wink.scrollElement(null, \(jsString(direction)), \(Int(abs(dx + dy))))") {
+                    try await tab.cdp.scroll(x: width / 2, y: height / 2, deltaX: dx, deltaY: dy)
+                }
                 try? await Task.sleep(nanoseconds: 120_000_000)
                 return try await js(tab, "__wink.position()") as? String ?? "Scrolled."
             }
@@ -937,6 +1078,7 @@ enum BrowserTools {
 
     private static func networkRequests(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
         let tab = try await accessTab(args, session, purpose: "inspect network traffic of")
+        if let fragment = string(args, "url") { return await networkDetail(tab, fragment) }
         let filter = string(args, "filter") ?? "all"
         let limit = min(max(int(args, "limit") ?? 50, 1), 400)
         let entries = (tab.webView?.recentNetworkEntries() ?? []).filter { entry in
@@ -952,15 +1094,45 @@ enum BrowserTools {
             let status = entry.blocked ? "BLOCKED" : (entry.failed ? "FAILED" : "\(entry.statusCode)")
             let size = entry.bytes > 0 ? " \(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file))" : ""
             return "\(entry.method) \(status) [\(entry.resourceType)]\(size) \(entry.url)"
-        }.joined(separator: "\n"))
+        }.joined(separator: "\n") + "\n(network_requests url:<part of a URL> shows one request in full.)")
+    }
+
+    private static let hiddenHeaders: Set<String> = ["cookie", "set-cookie", "authorization", "proxy-authorization", "x-api-key", "x-auth-token", "x-csrf-token"]
+
+    private static func networkDetail(_ tab: Tab, _ fragment: String) async -> AgentToolResult {
+        guard let request = tab.instruments.request(matching: fragment) else {
+            return .text("No request recorded whose URL contains “\(fragment)”. Wink keeps details from when an agent first used this tab: reload or repeat the action, then ask again.")
+        }
+        var out = ["\(request.method) \(request.url)"]
+        if let status = request.status {
+            out.append("→ \(status) \(request.statusText)\(request.mimeType.isEmpty ? "" : " (\(request.mimeType))")")
+        } else {
+            out.append("→ \(request.failure ?? (request.finished ? "no response" : "pending"))")
+        }
+        let headers = { (headers: [String: String]) in
+            headers.sorted { $0.key.lowercased() < $1.key.lowercased() }.map { key, value in
+                "  \(key): \(hiddenHeaders.contains(key.lowercased()) ? "(hidden)" : String(value.prefix(300)))"
+            }.joined(separator: "\n")
+        }
+        out.append("Request headers:\n" + headers(request.requestHeaders))
+        if let body = request.postData, !body.isEmpty {
+            out.append("Request body:\n" + String(body.prefix(4000)) + (body.count > 4000 ? "\n…" : ""))
+        }
+        if request.status != nil {
+            out.append("Response headers:\n" + headers(request.responseHeaders))
+            if let body = await tab.instruments.responseBody(request), !body.isEmpty {
+                out.append("Response body:\n" + String(body.prefix(6000)) + (body.count > 6000 ? "\n… (\(body.count) characters)" : ""))
+            }
+        }
+        return .text(out.joined(separator: "\n"))
     }
 
     private static func evaluate(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
-        guard WinkSettings.shared.allowAgentJavaScript else {
-            return .error("Running JavaScript is disabled. The user can enable it in Wink Settings › Agents.")
-        }
         guard let expression = string(args, "expression") else { return .error("evaluate needs expression.") }
         let tab = try await accessTab(args, session, purpose: "run JavaScript in")
+        guard WinkSettings.shared.allowAgentJavaScript || Site.isLocalDevelopment(Site.host(of: tab.url)) else {
+            return .error("JavaScript is allowed on localhost, 127.0.0.1 and *.test; on other sites only if the user enables it in Wink Settings › Agents. Use read_page (with match), find or snapshot instead.")
+        }
         try await AgentHub.shared.waitWhilePaused(session)
         return try await run(session, tab, "Running a script", symbol: symbol(for: "evaluate")) {
             let value = try await tab.cdp.evaluateInPage(expression)
@@ -969,6 +1141,267 @@ enum BrowserTools {
             let data = (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .prettyPrinted])) ?? Data()
             return .text(String((String(data: data, encoding: .utf8) ?? "\(value)").prefix(50_000)))
         }
+    }
+
+    // MARK: - Forms, files, drag and drop, dialogs
+
+    private static func fillForm(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        guard let fields = args["fields"] as? [[String: Any]], !fields.isEmpty else {
+            return .error("fill_form needs fields, e.g. [{\"ref\":\"e3\",\"value\":\"Ada\"},{\"ref\":\"e7\",\"value\":\"true\"}].")
+        }
+        guard fields.count <= 40 else { return .error("At most 40 fields per call.") }
+        let tab = try await accessTab(args, session, purpose: "control")
+        var lines: [String] = []
+        var failed = false
+        for (index, field) in fields.enumerated() {
+            guard let ref = string(field, "ref") else { lines.append("\(index + 1). ✗ missing ref"); failed = true; break }
+            let value: String = (field["value"] as? String) ?? (field["value"] as? Bool).map { $0 ? "true" : "false" }
+                ?? (field["value"] as? NSNumber)?.stringValue ?? ""
+            do {
+                try Task.checkCancellation()
+                let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
+                let text: String
+                switch target.role {
+                case "checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio":
+                    text = try await setChecked(session, tab, target, ref: ref,
+                                                want: ["true", "yes", "on", "1", "checked"].contains(value.lowercased()))
+                case "combobox", "listbox" where !target.editable:
+                    text = try await perform("select_option", ["ref": ref, "value": value], session, tab, inBatch: true)
+                default:
+                    text = try await perform("type", ["ref": ref, "text": value], session, tab, inBatch: true)
+                }
+                lines.append("\(index + 1). " + text.replacingOccurrences(of: "\n", with: "\n   "))
+            } catch {
+                lines.append("\(index + 1). ✗ \(ref): \(error.localizedDescription)")
+                failed = true
+                break
+            }
+        }
+        return AgentToolResult(content: [.text(lines.joined(separator: "\n"))], isError: failed)
+    }
+
+    /// Checks or unchecks (clicking only if needed), like Playwright's check().
+    private static func setChecked(_ session: AgentSession, _ tab: Tab, _ target: Target, ref: String, want: Bool) async throws -> String {
+        let locator = await locator(tab, ref)
+        let isChecked = (try? await js(tab, "__wink.checkedOf(\(jsString(ref)))")) as? Bool ?? false
+        if isChecked != want {
+            _ = try await act(session, tab, "\(want ? "Checking" : "Unchecking") \(target.label)", tool: "click",
+                              target: target, risk: target.risk, changeLimit: 10) {
+                AgentVisuals.press(tab, at: target.point)
+                try await deliver(tab, expecting: "mousedown", fallback: "__wink.syntheticClick(\(target.point.x), \(target.point.y), 'left', 1)") {
+                    try await tab.cdp.click(x: target.point.x, y: target.point.y)
+                }
+                return ""
+            }
+        }
+        if let locator { tab.instruments.record(.init(kind: want ? .check : .uncheck, locator: locator, value: ""), session: session) }
+        let now = (try? await js(tab, "__wink.checkedOf(\(jsString(ref)))")) as? Bool ?? want
+        let verb = want ? "Checked" : "Unchecked"
+        if now != want { return "✗ \(target.phrase) [ref=\(ref)] stayed \(now ? "checked" : "unchecked")." }
+        return isChecked == want ? "\(target.phrase) [ref=\(ref)] was already \(want ? "checked" : "unchecked")." : "\(verb) \(target.phrase) [ref=\(ref)]."
+    }
+
+    private static func drag(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "control")
+        let end = { (refKey: String, textKey: String) async throws -> String? in
+            if let ref = string(args, refKey) { return ref }
+            guard let text = string(args, textKey) else { return nil }
+            return try await js(tab, "__wink.refByText(\(jsString(text)))") as? String
+        }
+        guard let fromRef = try await end("from_ref", "from_text"), let toRef = try await end("to_ref", "to_text") else {
+            return .error("drag needs from_ref or from_text, and to_ref or to_text.")
+        }
+        _ = try await resolveTarget(tab, ["ref": toRef], wait: 0)  // scrolls the drop zone into view
+        let from = try await resolveTarget(tab, ["ref": fromRef], wait: 0)
+        let to = try await resolveTarget(tab, ["ref": toRef], wait: 0)
+        let fromLocator = await locator(tab, fromRef), toLocator = await locator(tab, toRef)
+        let text = try await act(session, tab, "Dragging \(from.label) to \(to.label)", tool: "drag", target: to,
+                                 risk: nil, changeLimit: 22) {
+            AgentVisuals.press(tab, at: from.point)
+            try await deliver(tab, expecting: "mousedown",
+                              fallback: "__wink.syntheticDrag(\(from.point.x), \(from.point.y), \(to.point.x), \(to.point.y))") {
+                try await tab.cdp.drag(from: from.point, to: to.point)
+            }
+            return "Dragged \(from.phrase) onto \(to.phrase)."
+        }
+        if let fromLocator, let toLocator {
+            tab.instruments.record(.init(kind: .dragTo, locator: fromLocator, value: "", target: toLocator), session: session)
+        }
+        return .text(text)
+    }
+
+    private static func uploadFile(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        guard let ref = string(args, "ref"), let raw = args["paths"] as? [String], !raw.isEmpty else {
+            return .error("upload_file needs ref and paths (absolute file paths).")
+        }
+        let tab = try await accessTab(args, session, purpose: "control")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var paths: [String] = []
+        for path in raw {
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                return .error("No file at \(path).")
+            }
+            // Secrets stay home: hidden folders (~/.ssh, ~/.aws, …), Library, system folders.
+            if url.pathComponents.contains(where: { $0.hasPrefix(".") }) || url.path.hasPrefix(home + "/Library/")
+                || ["/etc/", "/private/etc/", "/System/", "/var/root/"].contains(where: { url.path.hasPrefix($0) }) {
+                return .error("Wink doesn't let agents upload files from hidden or system folders (\(url.lastPathComponent)).")
+            }
+            paths.append(url.path)
+        }
+        let names = paths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")
+        let host = Site.host(of: tab.url)
+        if !Site.isLocalDevelopment(host) {
+            let ok = await AgentHub.shared.confirm(session, tab: tab, title: "\(session.name) wants to upload \(names)",
+                                                   message: "to \(host.isEmpty ? "this page" : host). The files leave your Mac.")
+            guard ok else { return .error("The user didn't allow uploading \(names). Don't retry; ask them.") }
+        }
+        let target = try? await resolveTarget(tab, ["ref": ref], wait: 0)  // file inputs are often hidden
+        let inputLocator = (try? await js(tab, "__wink.locatorOf(__wink.refFor(__wink.fileInput(\(jsString(ref)))))")) as? [String: Any]
+        let text = try await act(session, tab, "Attaching \(names)", tool: "upload_file", target: target, risk: nil, changeLimit: 22) {
+            let objectID = try await tab.cdp.agentObjectID("__wink.fileInput(\(jsString(ref)))")
+            _ = try await tab.cdp.send("DOM.setFileInputFiles", ["files": paths, "objectId": objectID])
+            return "Attached \(names)."
+        }
+        if let inputLocator {
+            tab.instruments.record(.init(kind: .upload, locator: inputLocator, value: paths.joined(separator: "\n")), session: session)
+        }
+        return .text(text)
+    }
+
+    private static func handleDialog(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try resolveTab(args, session)
+        try await AgentHub.shared.authorize(session, tab: tab, purpose: "control")
+        guard let dialog = tab.instruments.dialog else { return .error("No JavaScript dialog is open in this tab.") }
+        let accept = bool(args, "accept") ?? true
+        let promptText = args["prompt_text"] as? String
+        return try await run(session, tab, accept ? "Answering OK" : "Answering Cancel", symbol: symbol(for: "handle_dialog")) {
+            guard tab.webView?.answerJavaScriptDialog(accept, text: promptText) == true else {
+                tab.instruments.dialogHandled()
+                return .error("The dialog was already closed.")
+            }
+            tab.instruments.dialogHandled()
+            tab.instruments.record(.init(kind: .dialog, locator: [:], value: accept ? "accept" : "dismiss",
+                                         target: promptText.map { ["text": $0] }), session: session)
+            let settled = await settle(tab, patient: false)
+            let summary = "\(accept ? "Accepted" : "Dismissed") the \(dialog.type) “\(dialog.message.prefix(120))”."
+            return .text(summary + (await changes(tab, settled, near: nil, limit: 22)))
+        }
+    }
+
+    // MARK: - Emulation
+
+    private static let devices: [String: (width: Int, height: Int, scale: Double, mobile: Bool, userAgent: String?)] = [
+        "iphone": (390, 844, 3, true, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"),
+        "ipad": (820, 1180, 2, true, "Mozilla/5.0 (iPad; CPU OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"),
+        "android": (412, 915, 2.625, true, "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36"),
+        "desktop": (1440, 900, 1, false, nil),
+    ]
+
+    private static func emulate(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "control")
+        let cdp = tab.cdp
+        return try await run(session, tab, "Changing how the page is shown", symbol: symbol(for: "emulate")) {
+            if bool(args, "reset") == true {
+                _ = try? await cdp.send("Emulation.clearDeviceMetricsOverride")
+                _ = try? await cdp.send("Emulation.setTouchEmulationEnabled", ["enabled": false])
+                _ = try? await cdp.send("Emulation.setEmulatedMedia", ["media": "", "features": [] as [Any]])
+                if let agent = tab.instruments.userAgent { _ = try? await cdp.send("Emulation.setUserAgentOverride", ["userAgent": agent]) }
+                tab.instruments.emulating = false
+                return .text("Back to the normal size, color scheme and motion.")
+            }
+            var parts: [String] = []
+            let device = string(args, "device").flatMap { devices[$0.lowercased()] }
+            if string(args, "device") != nil && device == nil { return .error("device is iphone, ipad, android or desktop.") }
+            var width = int(args, "width") ?? device?.width
+            var height = int(args, "height") ?? device?.height
+            if width != nil || height != nil {
+                let metrics = try await cdp.send("Page.getLayoutMetrics")
+                let viewport = metrics["cssLayoutViewport"] as? [String: Any] ?? [:]
+                width = width ?? (viewport["clientWidth"] as? NSNumber)?.intValue ?? 1280
+                height = height ?? (viewport["clientHeight"] as? NSNumber)?.intValue ?? 800
+                let mobile = device?.mobile ?? false
+                _ = try await cdp.send("Emulation.setDeviceMetricsOverride",
+                                       ["width": width!, "height": height!, "deviceScaleFactor": device?.scale ?? 0, "mobile": mobile])
+                _ = try? await cdp.send("Emulation.setTouchEmulationEnabled", ["enabled": mobile, "maxTouchPoints": mobile ? 5 : 1])
+                parts.append("\(width!)×\(height!)\(mobile ? " mobile" : "") viewport")
+                tab.instruments.record(.init(kind: .viewport, locator: [:], value: "width: \(width!), height: \(height!)"), session: session)
+            }
+            if let device {
+                if tab.instruments.userAgent == nil { tab.instruments.userAgent = try? await js(tab, "navigator.userAgent") as? String }
+                if let agent = device.userAgent ?? tab.instruments.userAgent {
+                    _ = try? await cdp.send("Emulation.setUserAgentOverride", ["userAgent": agent])
+                }
+            }
+            var features: [[String: String]] = []
+            var media: [String] = []
+            if let scheme = string(args, "color_scheme") {
+                features.append(["name": "prefers-color-scheme", "value": scheme])
+                parts.append("\(scheme) mode")
+                media.append("colorScheme: \(PlaywrightExport.quote(scheme))")
+            }
+            if let reduced = bool(args, "reduced_motion") {
+                features.append(["name": "prefers-reduced-motion", "value": reduced ? "reduce" : "no-preference"])
+                parts.append(reduced ? "reduced motion" : "full motion")
+                media.append("reducedMotion: \(PlaywrightExport.quote(reduced ? "reduce" : "no-preference"))")
+            }
+            if !features.isEmpty {
+                _ = try await cdp.send("Emulation.setEmulatedMedia", ["features": features])
+                tab.instruments.record(.init(kind: .media, locator: [:], value: media.joined(separator: ", ")), session: session)
+            }
+            guard !parts.isEmpty else { return .error("Pass device, width/height, color_scheme or reduced_motion, or reset:true.") }
+            tab.instruments.emulating = true
+            let note = device?.mobile == true ? " Reload if the site chooses its layout on the server." : ""
+            return .text("Showing the page at \(parts.joined(separator: ", ")).\(note) Take a screenshot to see it.")
+        }
+    }
+
+    // MARK: - Playwright export
+
+    private static func exportTest(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "read")
+        let steps = tab.instruments.steps(for: session)
+        let checks = args["expect"] as? [[String: Any]] ?? []
+        guard steps.contains(where: { $0.kind != .goto }) || !checks.isEmpty else {
+            return .error("Nothing recorded in this tab yet. Act on the page (click, type, …), then export.")
+        }
+        var assertions: [String] = []
+        var failures: [String] = []
+        for check in checks {
+            let data = (try? JSONSerialization.data(withJSONObject: check)) ?? Data("{}".utf8)
+            let json = String(data: data, encoding: .utf8) ?? "{}"
+            let result: [String: Any]
+            do {
+                result = try await js(tab, "__wink.verify(\(json))") as? [String: Any] ?? [:]
+            } catch {
+                failures.append("\(json): \(error.localizedDescription)")
+                continue
+            }
+            guard result["ok"] as? Bool == true else {
+                failures.append("\(json): actually \(result["actual"] as? String ?? "different")")
+                continue
+            }
+            if let text = check["text"] as? String {
+                assertions.append("await expect(page.locator('body')).toContainText(\(PlaywrightExport.quote(text)));")
+            } else if let ref = check["ref"] as? String, let locator = await locator(tab, ref) {
+                let target = PlaywrightExport.locator(locator)
+                if let checked = check["checked"] as? Bool {
+                    assertions.append("await expect(\(target))\(checked ? "" : ".not").toBeChecked();")
+                } else if let value = check["value"] as? String {
+                    assertions.append("await expect(\(target)).toHaveValue(\(PlaywrightExport.quote(value)));")
+                } else {
+                    assertions.append("await expect(\(target)).\(check["visible"] as? Bool == false ? "toBeHidden" : "toBeVisible")();")
+                }
+            }
+        }
+        guard failures.isEmpty else {
+            return .error("These checks don't hold on the page now, so the test would fail:\n" + failures.joined(separator: "\n"))
+        }
+        let name = string(args, "name") ?? tab.displayTitle
+        let code = PlaywrightExport.code(name: name, steps: steps, assertions: assertions)
+        let actions = steps.filter { $0.kind != .goto && $0.kind != .dialog }.count
+        return .text("Playwright test from \(actions) step\(actions == 1 ? "" : "s") and \(assertions.count) check\(assertions.count == 1 ? "" : "s") (verified on the live page). Save it as tests/<name>.spec.ts and run npx playwright test.\n\n```ts\n\(code)\n```")
     }
 
     // MARK: - Claude Code permission prompts

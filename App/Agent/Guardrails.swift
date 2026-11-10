@@ -40,6 +40,8 @@ enum Guardrails {
     static func check(_ action: ConsequentialAction, session: AgentSession, tab: Tab, verb: String = "click") async throws {
         let settings = WinkSettings.shared
         let host = Site.host(of: tab.url)
+        // A developer's own app on this Mac: nothing to protect from itself.
+        if Site.isLocalDevelopment(host) { return }
         let site = host.isEmpty ? "this page" : Site.registrableDomain(host)
         try await checkBudget(session: session, site: site, tab: tab)
 
