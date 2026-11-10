@@ -8,7 +8,8 @@ Wink is a native macOS browser (AppKit + SwiftUI) on the Chromium engine. Agents
 
 - **Native and fast.** The UI is native AppKit + SwiftUI, with no web-based browser chrome. It is ready in ~265 ms, keeps live tabs in place so switching is instant, and puts idle tabs to sleep (5 open tabs: 858 MB → 421 MB).
 - **Agentic.** A built-in MCP server lets Claude Code, Claude Desktop, or any MCP client drive Wink, and Winky runs on Claude (API) or your local Claude Code CLI, from a prompt bar that floats over the page (⌘J).
-  - **Few round trips.** Every action reports what it changed, and `find` and `batch` handle repetitive work, so agents need far fewer turns.
+  - **Few round trips.** Every action reports only what it changed, refs survive re-renders, and `find`, `fill_form` and `batch` handle repetitive work, so agents need far fewer turns than with Playwright ([comparison](https://wink.minnebo.ai/vs-playwright)).
+  - **Built for web developers.** Network requests in full, JavaScript on localhost, phone sizes and dark mode, JavaScript dialogs, uploads and drag and drop. `export_test` turns what an agent did into a Playwright test.
   - **Visible.** A soft aurora rims the page, Wink's eye glides to each step and winks on every click, and an activity pill offers Pause and Stop.
   - **Guarded.** Wink asks before an agent sends, buys, deletes or connects; checks in after a burst of such actions; and pauses the agent the moment you click into its page.
 - **Private.** It blocks 93k tracker and ad domains, upgrades to HTTPS, blocks third-party cookies, and sends Global Privacy Control. WebRTC doesn't leak your local IP. The Chromium sandbox is on, and no debugging port is ever opened. There is no account; a daily update check carries anonymous usage counts you can switch off ([details](docs/PRIVACY.md#updates-and-anonymous-counts)).
@@ -66,7 +67,15 @@ Then ask Claude Code things like *"open localhost:3000 in Wink, click through th
 `scripts/release.sh` builds a Developer ID–signed, notarized and stapled `Wink-<version>.dmg` (see [Releasing](docs/RELEASING.md)).
 
 - **Downloads:** public, on [wink-browser/releases](https://github.com/wink-browser/releases).
-- **Website:** [wink.minnebo.ai](https://wink.minnebo.ai); the code lives in [wink-browser/website](https://github.com/wink-browser/website), deployed on Vercel.
+- **Website:** [wink.minnebo.ai](https://wink.minnebo.ai).
+
+## Contributing
+
+Issues and pull requests are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately, as [SECURITY.md](SECURITY.md) describes. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+Wink is open source under the [Apache License 2.0](LICENSE). The Wink name, logo and the Winky portrait are not; see [TRADEMARKS.md](TRADEMARKS.md). Third-party notices are in [NOTICE](NOTICE).
 
 ## Status
 

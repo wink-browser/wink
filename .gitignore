@@ -18,3 +18,6 @@
 xcuserdata/
 *.xcworkspace
 DerivedData/
+
+# Local agent screenshots and scratch
+/.flock/

@@ -1,0 +1,16 @@
+Wink
+Copyright 2026 The Wink Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+The Wink name, the Wink eye logo and the Winky portrait are not licensed under
+it; see TRADEMARKS.md.
+
+Wink is built with, and its releases include, third-party software:
+
+- Chromium Embedded Framework (CEF) and Chromium: BSD-style licenses
+  (CEF's LICENSE.txt and CREDITS.html ship with the engine that
+  `make bootstrap` downloads, and inside Wink.app).
+- Sparkle (https://sparkle-project.org): MIT License.
+- The codecs build of CEF comes from the public workflow cef-codecs.yml of
+  dpfaffenbauer/OpenArch: MIT License.
+- The tracker and ad blocklist: see Resources/blocklist/NOTICE.

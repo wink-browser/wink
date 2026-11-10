@@ -2,8 +2,8 @@
 # Fetches the pinned Chromium Embedded Framework (CEF) binary distribution that
 # Wink is built on and verifies its checksum. Idempotent: re-running is a no-op
 # when the pinned version is already in place. On Apple silicon that is the
-# build with proprietary codecs, from a release of ENGINE_REPO (needs `gh`
-# signed in with access to it); on Intel, the official build from the CDN.
+# build with proprietary codecs, from a release of ENGINE_REPO; on Intel, the
+# official build from the CDN.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -60,9 +60,14 @@ mkdir -p "$DOWNLOADS"
 if [[ ! -f "$DOWNLOADS/$ARCHIVE" ]]; then
   echo "↓ Downloading $ARCHIVE ($FLAVOR)"
   if [[ "$FLAVOR" == codecs ]]; then
-    command -v gh > /dev/null || { echo "error: the engine is a release of $ENGINE_REPO; install gh and sign in" >&2; exit 1; }
-    gh release download "$ENGINE_RELEASE" --repo "$ENGINE_REPO" --pattern "$ARCHIVE" \
-      --output "$DOWNLOADS/$ARCHIVE.partial" --clobber
+    ENCODED="$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$ARCHIVE")"
+    if ! curl --fail --location --progress-bar -o "$DOWNLOADS/$ARCHIVE.partial" \
+        "https://github.com/$ENGINE_REPO/releases/download/$ENGINE_RELEASE/$ENCODED"; then
+      # Not public (forks, CI before a release): fall back to an authenticated download.
+      command -v gh > /dev/null || { echo "error: couldn't download the engine from $ENGINE_REPO" >&2; exit 1; }
+      gh release download "$ENGINE_RELEASE" --repo "$ENGINE_REPO" --pattern "$ARCHIVE" \
+        --output "$DOWNLOADS/$ARCHIVE.partial" --clobber
+    fi
   else
     ENCODED="$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$ARCHIVE")"
     curl --fail --location --progress-bar -o "$DOWNLOADS/$ARCHIVE.partial" "$CEF_CDN/$ENCODED"

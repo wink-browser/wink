@@ -6,8 +6,9 @@ CHROMIUM_VERSION="156.0.8078.88"
 # HEVC) the official builds leave out, so Instagram, X and most video plays.
 # Built by the public workflow cef-codecs.yml of dpfaffenbauer/OpenArch (MIT,
 # run 42450804072) from CEF's and Chromium's own sources at exactly this
-# version, and mirrored as a release asset of this repository. Fetched with
-# `gh` (the repository is private). See docs/ARCHITECTURE.md › Engine.
+# version, and mirrored as a release asset of this repository, which
+# `make bootstrap` downloads and checks against the SHA-256 below. See
+# docs/ARCHITECTURE.md › Engine.
 ENGINE_REPO="wink-browser/wink"
 ENGINE_RELEASE="engine-156.0.26-codecs"
 CEF_SHA256_MACOSARM64="07b59a4f81f1b3bab03648bee19468293b01ef103afa7e4cbca663c15c1e3176"
