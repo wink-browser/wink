@@ -355,9 +355,10 @@ enum PageScripts {
         return header.concat(lines).join('\n');
       };
 
-      W.read = (maxChars = 20000, match = '') => {
+      W.read = (maxChars = 20000, match = '', everything = false) => {
         if (match) return W.grep(maxChars, match);
-        const root = document.querySelector('main, article, [role=main]') || document.body;
+        // Reading skips navigation and footers; looking for a word doesn't.
+        const root = everything ? document.body : (document.querySelector('main, article, [role=main]') || document.body);
         const out = [];
         let len = 0;
         const push = (s) => { if (len <= maxChars) { out.push(s); len += s.length + 1; } };
@@ -400,7 +401,7 @@ enum PageScripts {
             const c = node;
             const tag = c.tagName;
             if (SKIP.has(tag) || c.getAttribute('aria-hidden') === 'true' || !visible(c)) continue;
-            if (root === document.body && (['NAV', 'FOOTER', 'ASIDE'].includes(tag) || c.getAttribute('role') === 'navigation')) continue;
+            if (!everything && root === document.body && (['NAV', 'FOOTER', 'ASIDE'].includes(tag) || c.getAttribute('role') === 'navigation')) continue;
             if (/^H[1-6]$/.test(tag)) { const t = clean(c.innerText, 300); if (t) push('\n' + '#'.repeat(Number(tag[1])) + ' ' + t + '\n'); continue; }
             if (tag === 'P') { const t = inline(c).trim(); if (t) push(t + '\n'); continue; }
             if (tag === 'UL' || tag === 'OL') {
@@ -437,7 +438,7 @@ enum PageScripts {
       W.grep = (maxChars, match) => {
         const needle = String(match).toLowerCase();
         const full = (() => {
-          const text = W.read(400000).split('\n');
+          const text = W.read(400000, '', true).split('\n');
           return text.slice(2);
         })();
         const out = [];
@@ -636,6 +637,16 @@ enum PageScripts {
               // Text in a <label> names its control (a checkbox next to the text).
               const label = el.closest && el.closest('label');
               if (label && label.control) consider(label.control);
+              // Unnamed controls beside the text in the same row (a to-do's
+              // checkbox and delete button next to its title).
+              else if (!target) {
+                for (let row = el.parentElement, i = 0; row && i < 3; row = row.parentElement, i++) {
+                  const controls = Array.from(row.querySelectorAll('input,button,select,a[href],[role=checkbox],[role=button]'))
+                    .filter(c => !nameOf(c, roleOf(c) || 'button'));
+                  if (controls.length && controls.length <= 4) { controls.forEach(consider); break; }
+                  if (row.childElementCount > 8) break;
+                }
+              }
             }
           }
         };
@@ -665,10 +676,39 @@ enum PageScripts {
       };
 
       // The first visible element matching a CSS selector, as a ref.
+      // CSS, plus the two Playwright forms models know: `text=Sign in` and
+      // `li:has-text("eggs") .toggle` (a descendant of the innermost match).
+      const depth = (n) => { let d = 0; for (let p = n; p; p = p.parentElement) d++; return d; };
+      const selectAll = (sel) => {
+        sel = String(sel).trim();
+        if (/^text=/i.test(sel)) {
+          const text = sel.slice(5).trim().replace(/^["']|["']$/g, '');
+          const ref = W.findByText(text, true);
+          return ref ? [W.el(ref)] : [];
+        }
+        const m = sel.match(/^(.*?):has-text\((["'])(.*?)\2\)(.*)$/s);
+        if (m) {
+          const base = m[1].trim() || '*', text = m[3].toLowerCase(), rest = m[4].trim();
+          const hosts = Array.from(document.querySelectorAll(base))
+            .filter(e => (e.innerText || e.textContent || '').toLowerCase().includes(text))
+            .sort((a, b) => depth(b) - depth(a));
+          if (!rest) return hosts;
+          for (const host of hosts) {
+            const inner = Array.from(host.querySelectorAll(rest.startsWith('>') ? ':scope ' + rest : rest));
+            if (inner.length) return inner;
+          }
+          return [];
+        }
+        return Array.from(document.querySelectorAll(sel));
+      };
       W.refBySelector = (sel) => {
         let all;
-        try { all = Array.from(document.querySelectorAll(sel)); } catch (e) { throw new Error(`Bad CSS selector "${sel}".`); }
-        const el = all.find(e => visible(e) && e.getBoundingClientRect().width > 0) || null;
+        try { all = selectAll(sel); } catch (e) { throw new Error(`Bad selector "${sel}".`); }
+        const boxed = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        // Visible first; then anything with a box (custom checkboxes are often
+        // opacity:0 inputs laid over their drawing, and still take the click).
+        const el = all.find(e => visible(e) && boxed(e)) ||
+          all.find(e => boxed(e) && getComputedStyle(e).visibility !== 'hidden') || null;
         if (!el) return null;
         const role = roleOf(el) || el.tagName.toLowerCase();
         return W.refFor(el, role, nameOf(el, role));

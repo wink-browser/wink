@@ -57,7 +57,7 @@ enum BrowserTools {
     private static let stepSchema: [String: Any] = [
         "type": "object",
         "properties": [
-            "action": ["type": "string", "enum": ["click", "type", "press_key", "select_option", "hover", "scroll", "wait_for", "navigate"]],
+            "action": ["type": "string", "enum": ["navigate", "click", "type", "select_option", "press_key", "hover", "scroll", "wait_for", "read", "evaluate"]],
             "ref": prop("string", "Element ref."),
             "selector": prop("string", "CSS selector of the element to act on (wait_for: to wait for)."),
             "label": prop("string", "type/select_option: the field's label, placeholder or name."),
@@ -73,6 +73,8 @@ enum BrowserTools {
             "gone": prop("boolean", "wait_for: until gone."),
             "timeout_ms": prop("integer", "wait_for: max wait."),
             "double_click": prop("boolean", "click: double-click."),
+            "match": prop("string", "read: only the parts mentioning this."),
+            "expression": prop("string", "evaluate: JavaScript."),
         ],
         "required": ["action"],
         "additionalProperties": false,
@@ -179,8 +181,9 @@ enum BrowserTools {
                            "ref": prop("string", "Scrollable element."), "tab_id": tabID],
               required: ["direction"], readOnly: false),
         .init(name: "batch",
-              description: "Run a whole flow in one call, across page loads: up to 40 steps of navigate, click, type, select_option, press_key, hover, scroll, wait_for. Target by ref, CSS selector, visible text or field label, so a flow you know needs no lookup first. Each step waits for its element and the page; stops at the first failure.",
-              properties: ["steps": ["type": "array", "items": stepSchema, "description": "Steps in order."], "tab_id": tabID],
+              description: "Run a whole task in one call, across page loads: up to 40 steps of navigate, click, type, select_option, press_key, hover, scroll, wait_for, read (the page, or the parts that mention match) and evaluate. Target by ref, CSS selector (also text=… and :has-text(\"…\")), visible text or field label, so a flow you know needs no lookup first. url opens it in a new tab of yours. Each step waits for its element and the page; stops at the first failure.",
+              properties: ["url": prop("string", "Open this in a new tab of yours first."),
+                           "steps": ["type": "array", "items": stepSchema, "description": "Steps in order."], "tab_id": tabID],
               required: ["steps"], readOnly: false),
         .init(name: "wait_for", description: "Wait for text or a CSS selector to appear (gone:true: disappear).",
               properties: ["text": prop("string", "Text."), "selector": prop("string", "CSS selector."),
@@ -204,7 +207,7 @@ enum BrowserTools {
                            "limit": prop("integer", "Max entries (default 50)."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "evaluate",
-              description: "Run JavaScript in the page; returns the JSON result. Always allowed on localhost, 127.0.0.1 and *.test; elsewhere only if the user enabled it.",
+              description: "Run JavaScript in the page; returns the JSON result. Allowed on localhost, 127.0.0.1, *.test and in headless sessions; elsewhere only if the user enabled it.",
               properties: ["expression": prop("string", "Expression; may return a Promise."), "tab_id": tabID],
               required: ["expression"], readOnly: false),
         .init(name: "emulate",
@@ -1096,19 +1099,45 @@ enum BrowserTools {
         case "wait_for", "wait":
             return try await waitStep(args, session, tab)
 
+        case "read":
+            let match = string(args, "match") ?? ""
+            let text = try await js(tab, "__wink.read(\(inBatch ? 6000 : 20000), \(jsString(match)))") as? String ?? ""
+            return text
+
+        case "evaluate":
+            guard let expression = string(args, "expression") else { throw AgentAccessError(message: "evaluate needs expression.") }
+            guard javaScriptAllowed(tab) else { throw AgentAccessError(message: javaScriptRefusal) }
+            let value = try await tab.cdp.evaluateInPage(expression)
+            if let string = value as? String { return String(string.prefix(8000)) }
+            let data = (try? JSONSerialization.data(withJSONObject: value ?? NSNull(), options: [.fragmentsAllowed, .sortedKeys])) ?? Data()
+            return String((String(data: data, encoding: .utf8) ?? "undefined").prefix(8000))
+
         case "navigate":
             return try await navigateStep(args, session, tab)
 
         default:
-            throw AgentAccessError(message: "Unknown action “\(action)”. Use click, type, press_key, select_option, hover, scroll, wait_for or navigate.")
+            throw AgentAccessError(message: "Unknown action “\(action)”. Use navigate, click, type, select_option, press_key, hover, scroll, wait_for, read or evaluate.")
         }
     }
 
     private static func batch(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
-        guard let steps = args["steps"] as? [[String: Any]], !steps.isEmpty else {
+        guard let given = args["steps"] as? [[String: Any]], !given.isEmpty else {
             return .error("batch needs steps, e.g. [{\"action\":\"click\",\"ref\":\"e12\"},{\"action\":\"click\",\"text\":\"Send\"}].")
         }
-        guard steps.count <= 40 else { return .error("At most 40 steps per batch.") }
+        guard given.count <= 40 else { return .error("At most 40 steps per batch.") }
+        var steps = given
+        var opened: String?
+        var url = string(args, "url")
+        if url == nil, string(args, "tab_id") == nil, session.currentTabID == nil,
+           (steps.first?["action"] as? String)?.lowercased() == "navigate" {
+            url = steps.first?["url"] as? String
+            steps.removeFirst()
+        }
+        if let url {
+            let result = try await tabOpen(["url": url], session)
+            if result.isError { return result }
+            opened = result.summary.components(separatedBy: "\n").first
+        }
         let tab = try await accessTab(args, session, purpose: "control")
         var lines: [String] = []
         var failed = false
@@ -1126,6 +1155,7 @@ enum BrowserTools {
                 break
             }
         }
+        if let opened { lines.insert(opened, at: 0) }
         return AgentToolResult(content: [.text(lines.joined(separator: "\n"))], isError: failed)
     }
 
@@ -1221,12 +1251,17 @@ enum BrowserTools {
         return .text(out.joined(separator: "\n"))
     }
 
+    /// Pages run agent JavaScript on localhost, in a private headless instance
+    /// (a throwaway profile with nothing to leak), or where the user allowed it.
+    private static func javaScriptAllowed(_ tab: Tab) -> Bool {
+        WinkSettings.shared.allowAgentJavaScript || DebugDriver.isAgentHeadless || Site.isLocalDevelopment(Site.host(of: tab.url))
+    }
+    private static let javaScriptRefusal = "JavaScript is allowed on localhost, 127.0.0.1 and *.test and in headless sessions; on other sites only if the user enables it in Wink Settings › Agents. Use read_page (with match), find or snapshot instead."
+
     private static func evaluate(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
         guard let expression = string(args, "expression") else { return .error("evaluate needs expression.") }
         let tab = try await accessTab(args, session, purpose: "run JavaScript in")
-        guard WinkSettings.shared.allowAgentJavaScript || Site.isLocalDevelopment(Site.host(of: tab.url)) else {
-            return .error("JavaScript is allowed on localhost, 127.0.0.1 and *.test; on other sites only if the user enables it in Wink Settings › Agents. Use read_page (with match), find or snapshot instead.")
-        }
+        guard javaScriptAllowed(tab) else { return .error(javaScriptRefusal) }
         try await AgentHub.shared.waitWhilePaused(session)
         return try await run(session, tab, "Running a script", symbol: symbol(for: "evaluate")) {
             let value = try await tab.cdp.evaluateInPage(expression)

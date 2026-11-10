@@ -55,7 +55,7 @@ No TCP port is opened, so web pages can't reach the server through DNS rebinding
 | `drag` | Drag one element onto another, by ref or visible text (HTML5 drag and drop or pointer-based) |
 | `upload_file` | Attach files to a file input; the user approves uploads outside localhost |
 | `handle_dialog` | Answer a JavaScript alert, confirm, prompt or "leave page?" |
-| `batch` | Up to 25 steps in one call, stopping at the first failure |
+| `batch` | A whole task in one call, across page loads (up to 40 steps: navigate, click, type, select, keys, wait, read, evaluate), by ref, CSS selector (with `text=` and `:has-text()`), visible text or field label; `url` opens it in a new tab |
 | `wait_for` | Wait for text or a selector to appear or disappear |
 | `get_selection` | The user's selected text |
 | `console_logs`, `network_requests` | Page errors and requests, failed and blocked ones included; `url` shows one request with headers and bodies |
