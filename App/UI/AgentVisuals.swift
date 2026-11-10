@@ -797,7 +797,8 @@ final class AgentOverlayView: NSView, SnapshotDrawing {
 @MainActor
 enum AgentVisuals {
     private static func surface(for tab: Tab) -> (overlay: AgentOverlayView, zoom: CGFloat)? {
-        guard WinkSettings.shared.agentShowCursor,
+        // Nobody watches a private headless instance: no cursor to wait for.
+        guard !DebugDriver.isAgentHeadless, WinkSettings.shared.agentShowCursor,
               let controller = AppDelegate.shared?.window(containing: tab),
               controller.state.activeTabID == tab.id,
               let window = controller.window, window.isVisible, !window.isMiniaturized,

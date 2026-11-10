@@ -112,7 +112,7 @@ enum BrowserTools {
         .init(name: "go_forward", description: "Go forward.", properties: ["tab_id": tabID], required: [], readOnly: false),
         .init(name: "reload", description: "Reload the page.", properties: ["tab_id": tabID], required: [], readOnly: false),
         .init(name: "find",
-              description: "Find elements whose label or text contains `text`: refs plus the row or card each sits in. Much cheaper than snapshot.",
+              description: "Search the page for `text`: controls that mention it (refs, what they show, and the row or card each sits in), then plain text that mentions it. Much cheaper than snapshot.",
               properties: ["text": prop("string", "Text to look for (case-insensitive)."),
                            "role": prop("string", "Role filter: button, link, textbox, checkbox, heading…"),
                            "max": prop("integer", "Max matches (default 25)."), "tab_id": tabID],

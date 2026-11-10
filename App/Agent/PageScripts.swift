@@ -618,7 +618,23 @@ enum PageScripts {
           const r = el.getBoundingClientRect();
           const where = r.bottom < 0 ? ' (above, scrolled out)' : r.top > innerHeight ? ' (below, scrolled out)' : '';
           const ctx = contextOf(el);
-          found.push(describe(el, role) + where + (ctx ? `\n    in: “${ctx}”` : ''));
+          // What it shows, when its label says something else (a "Star" button
+          // labelled "Sign in to star" that shows "Star 99.8k").
+          const shows = clean(el.innerText || '', 80);
+          const extra = shows && shows !== name && !name.includes(shows) ? ` shows “${shows}”` : '';
+          found.push(describe(el, role) + extra + where + (ctx ? `\n    in: “${ctx}”` : ''));
+        };
+        // Plain text that mentions the query (counts, prices, labels), like a
+        // search of the page, after the controls.
+        const texts = [];
+        const textSeen = new Set();
+        const considerText = (el) => {
+          if (texts.length >= 8 || !visible(el)) return;
+          const t = clean(el.innerText || el.textContent || '', 160);
+          if (!t || textSeen.has(t)) return;
+          textSeen.add(t);
+          const ctx = contextOf(el);
+          texts.push(`text “${t}”` + (ctx && !ctx.includes(t) ? `\n    in: “${ctx}”` : ''));
         };
         const walk = (root) => {
           for (const el of root.querySelectorAll('*')) {
@@ -632,6 +648,7 @@ enum PageScripts {
             const text = el.childElementCount === 0 ? (el.textContent || '') : directText(el);
             if (text.toLowerCase().includes(q)) {
               const target = interactiveAncestor(el);
+              if (!target && !wantRole && !/^H[1-6]$/.test(el.tagName)) considerText(el);
               if (target) consider(target);
               else if (/^H[1-6]$/.test(el.tagName)) consider(el);
               // Text in a <label> names its control (a checkbox next to the text).
@@ -651,8 +668,9 @@ enum PageScripts {
           }
         };
         walk(document);
-        const header = `${found.length} match${found.length === 1 ? '' : 'es'} for ${q ? `“${query}”` : ''}${wantRole ? ` role=${wantRole}` : ''}${found.length >= max ? ` (first ${max})` : ''}`;
-        return found.length ? header + '\n' + found.map(l => '- ' + l).join('\n') : header + '. Try a shorter text, or snapshot.';
+        const all = found.concat(texts);
+        const header = `${all.length} match${all.length === 1 ? '' : 'es'} for ${q ? `“${query}”` : ''}${wantRole ? ` role=${wantRole}` : ''}${found.length >= max ? ` (first ${max})` : ''}`;
+        return all.length ? header + '\n' + all.map(l => '- ' + l).join('\n') : header + '. Try a shorter text, or snapshot.';
       };
 
       // Any visible element showing `text` (drop zones are often plain divs):
