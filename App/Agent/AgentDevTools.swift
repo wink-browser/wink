@@ -207,3 +207,101 @@ final class TabRecorder {
         if adaptor.append(buffer, withPresentationTime: CMTime(seconds: seconds, preferredTimescale: 600)) { frames += 1 }
     }
 }
+
+/// A step-by-step record of what agents did in a tab: every tool call with its
+/// result, a screenshot after each action, and the console messages and
+/// network requests that happened during it. Saved as one self-contained HTML
+/// page (no scripts) that opens in any browser.
+@MainActor
+final class TabTrace {
+    struct Step {
+        let index: Int
+        let at: TimeInterval
+        let duration: TimeInterval
+        let tool: String
+        let args: String
+        let result: String
+        let isError: Bool
+        let screenshot: Data?
+        let console: [ConsoleEntry]
+        let requests: [AgentInstruments.Request]
+    }
+
+    let started = Date()
+    let agent: String
+    let url: String
+    private(set) var steps: [Step] = []
+    private var mark: Date
+
+    init(agent: String, url: String) {
+        self.agent = agent
+        self.url = url
+        mark = started
+    }
+
+    func add(tool: String, args: String, result: AgentToolResult, began: Date, screenshot: Data?, tab: Tab) {
+        let now = Date()
+        let console = tab.console.elements.filter { $0.timestamp >= mark && $0.timestamp <= now }
+        let requests = tab.instruments.requests.filter { $0.started >= mark && $0.started <= now }
+        steps.append(Step(index: steps.count + 1, at: began.timeIntervalSince(started), duration: now.timeIntervalSince(began),
+                          tool: tool, args: args, result: result.summary, isError: result.isError,
+                          screenshot: screenshot, console: console, requests: requests))
+        mark = now
+    }
+
+    func html() -> String {
+        func esc(_ s: String) -> String {
+            s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+        }
+        let total = steps.last.map { $0.at + $0.duration } ?? 0
+        let errors = steps.filter(\.isError).count
+        var out = """
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Wink trace · \(esc(agent))</title>
+        <style>
+        :root{--ink:#12151f;--cobalt:#065fb1;--paper:#f6efe0;--line:#d9cfba;--bad:#b3261e}
+        body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 -apple-system,system-ui,sans-serif}
+        header{padding:28px 32px 20px;border-bottom:1px solid var(--line)}
+        h1{margin:0;font-size:20px;font-weight:600;color:var(--cobalt);letter-spacing:.02em}
+        header p{margin:6px 0 0;color:#555}
+        main{padding:12px 32px 48px;max-width:1100px}
+        details{border:1px solid var(--line);background:#fffdf8;margin:12px 0;border-radius:6px}
+        summary{cursor:pointer;padding:10px 14px;display:flex;gap:14px;align-items:baseline;list-style:none}
+        summary::-webkit-details-marker{display:none}
+        .n{color:#999;font-variant-numeric:tabular-nums;min-width:2.5em}.t{color:#999;font-variant-numeric:tabular-nums;min-width:5.5em}
+        .tool{font-weight:600;color:var(--cobalt)}.args{color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+        .err .tool{color:var(--bad)}
+        .body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;padding:0 14px 14px}
+        pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12.5px/1.45 ui-monospace,Menlo,monospace;background:#f3ecdc;padding:10px;border-radius:4px}
+        img{width:100%;border:1px solid var(--line);border-radius:4px}
+        h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#777;margin:12px 0 6px}
+        .bad{color:var(--bad)}
+        @media (max-width:760px){.body{grid-template-columns:1fr}main,header{padding-inline:16px}}
+        </style></head><body>
+        <header><h1>Wink trace</h1><p>\(esc(agent)) · \(esc(url)) · \(steps.count) step\(steps.count == 1 ? "" : "s") in \(String(format: "%.1f", total)) s\(errors > 0 ? " · \(errors) failed" : "") · recorded \(esc(DateFormatter.localizedString(from: started, dateStyle: .medium, timeStyle: .medium)))</p></header><main>
+        """
+        for step in steps {
+            out += "<details\(step.isError ? " class=\"err\"" : "")\(step.index <= 3 ? " open" : "")><summary><span class=\"n\">\(step.index)</span><span class=\"t\">+\(String(format: "%.2f", step.at)) s</span><span class=\"tool\">\(esc(step.tool))</span><span class=\"args\">\(esc(step.args))</span><span class=\"t\">\(String(format: "%.2f", step.duration)) s</span></summary><div class=\"body\"><div><h3>Result</h3><pre>\(esc(String(step.result.prefix(6000))))</pre>"
+            if !step.console.isEmpty {
+                out += "<h3>Console</h3><pre>" + step.console.map { entry in
+                    let line = esc("[\(entry.level == .error ? "error" : entry.level == .warning ? "warning" : "log")] \(entry.message.prefix(400))")
+                    return entry.level == .error ? "<span class=\"bad\">\(line)</span>" : line
+                }.joined(separator: "\n") + "</pre>"
+            }
+            if !step.requests.isEmpty {
+                out += "<h3>Network</h3><pre>" + step.requests.prefix(60).map { r in
+                    let status = r.status.map(String.init) ?? r.failure ?? "…"
+                    let line = esc("\(r.method) \(status) \(r.url.prefix(160))")
+                    return (r.failure != nil || (r.status ?? 0) >= 400) ? "<span class=\"bad\">\(line)</span>" : line
+                }.joined(separator: "\n") + "</pre>"
+            }
+            out += "</div><div>"
+            if let shot = step.screenshot {
+                out += "<h3>After</h3><img alt=\"The page after step \(step.index)\" src=\"data:image/jpeg;base64,\(shot.base64EncodedString())\">"
+            }
+            out += "</div></div></details>\n"
+        }
+        return out + "</main></body></html>\n"
+    }
+}

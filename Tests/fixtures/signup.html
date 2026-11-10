@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Acme — Sign up</title>
+<style>body{font:16px system-ui;max-width:420px;margin:40px auto}label{display:block;margin:10px 0}#msg{margin-top:14px;color:#b00}</style></head>
+<body><h1>Create your Acme account</h1>
+<form id="f">
+<label>Full name <input name="name" required></label>
+<label>Email <input name="email" type="email" required></label>
+<label>Plan <select name="plan"><option value="free">Free</option><option value="pro">Pro</option><option value="team">Team</option></select></label>
+<label><input type="checkbox" name="terms"> I accept the terms</label>
+<button type="submit">Create account</button>
+</form><div id="msg" role="status"></div>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target));
+  if (!d.terms) { msg.textContent = 'Please accept the terms.'; return; }
+  msg.textContent = 'Creating your account…';
+  try {
+    const r = await fetch('/api/v2/signup?plan=' + d.plan + '&email=' + encodeURIComponent(d.email));
+    const data = r.ok ? await r.json() : {};
+    console.log('signup response', r.status);
+    msg.textContent = 'Welcome, ' + data.user.name + '!';
+  } catch (err) {
+    console.error('Signup failed:', err.message);
+    msg.textContent = 'Something went wrong. Please try again.';
+  }
+});
+</script></body></html>

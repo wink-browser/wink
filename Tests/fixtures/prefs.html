@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>Preferences</title><h1>Preferences</h1>
+<label><input type="checkbox" id="dark"> Dark theme</label>
+<p id="out">Theme: light</p>
+<script>
+document.cookie = 'seen=1; path=/';
+dark.checked = localStorage.getItem('theme') === 'dark'; out.textContent = 'Theme: ' + (dark.checked ? 'dark' : 'light');
+dark.onchange = () => { localStorage.setItem('theme', dark.checked ? 'dark' : 'light'); document.cookie = 'theme=' + (dark.checked ? 'dark' : 'light') + '; path=/'; document.getElementById('out').textContent = 'Theme: ' + (dark.checked ? 'dark' : 'light'); };
+</script>

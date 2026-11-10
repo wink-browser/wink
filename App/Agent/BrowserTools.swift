@@ -233,6 +233,9 @@ enum BrowserTools {
         .init(name: "verify", description: "Check the live page: each expect passes or fails (text on the page, or a ref checked, with a value, or visible).",
               properties: ["expect": ["type": "array", "items": expectSchema, "description": "Checks."], "tab_id": tabID],
               required: ["expect"], readOnly: true),
+        .init(name: "trace", description: "Trace your tab step by step: start, then stop to save an HTML timeline (each step's result, a screenshot, console and network) in Downloads.",
+              properties: ["action": ["type": "string", "enum": ["start", "stop"]], "tab_id": tabID],
+              required: ["action"], readOnly: false),
         .init(name: "export_test",
               description: "Turn the steps you took in this tab into a Playwright test (TypeScript), with expect checks verified on the live page first. Save it with your own file tools.",
               properties: ["name": prop("string", "Test name."),
@@ -295,6 +298,7 @@ enum BrowserTools {
         case "save_pdf": "doc.richtext"
         case "record": "record.circle"
         case "verify": "checkmark.circle"
+        case "trace": "list.bullet.clipboard"
         case "tabs_list", "get_active_tab": "square.on.square"
         default: "sparkle"
         }
@@ -303,6 +307,36 @@ enum BrowserTools {
     // MARK: - Dispatch
 
     static func call(_ name: String, _ args: [String: Any], session: AgentSession) async -> AgentToolResult {
+        let began = Date()
+        let result = await dispatch(name, args, session: session)
+        // A traced tab records every step, with a screenshot after each action.
+        if name != "trace", let id = session.currentTabID,
+           let tab = AppDelegate.shared?.allTabs.first(where: { $0.id == id }), let trace = tab.instruments.trace {
+            let acts = !(definitions.first { $0.name == name }?.readOnly ?? true)
+            var shot: Data?
+            if acts && tab.instruments.dialog == nil {
+                shot = try? await tab.cdp.screenshot(maxWidth: 960, quality: 58).data
+            }
+            trace.add(tool: name, args: traceArgs(args), result: result, began: began, screenshot: shot, tab: tab)
+        }
+        return result
+    }
+
+    /// Arguments as one line for a trace, with typed text kept out of it.
+    private static func traceArgs(_ args: [String: Any]) -> String {
+        var shown = args
+        for key in ["text", "value", "body", "prompt_text", "expression"] where shown[key] != nil {
+            if let text = shown[key] as? String { shown[key] = text.count > 60 ? String(text.prefix(60)) + "…" : text }
+        }
+        if var fields = shown["fields"] as? [[String: Any]] {
+            for i in fields.indices { fields[i]["value"] = "…" }
+            shown["fields"] = fields
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: shown, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func dispatch(_ name: String, _ args: [String: Any], session: AgentSession) async -> AgentToolResult {
         do {
             switch name {
             case "tabs_list": return try await tabsList(session)
@@ -333,6 +367,7 @@ enum BrowserTools {
             case "save_pdf": return try await savePDF(args, session)
             case "record": return try await record(args, session)
             case "verify": return try await verify(args, session)
+            case "trace": return try await trace(args, session)
             case "wait_for": return try await waitFor(args, session)
             case "get_selection": return try await getSelection(args, session)
             case "console_logs": return try await consoleLogs(args, session)
@@ -1611,6 +1646,27 @@ enum BrowserTools {
             return .text("Saved \(url.path) (\(recorder.frames) frames, \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))).")
         default:
             return .error("record needs action start or stop.")
+        }
+    }
+
+    private static func trace(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
+        let tab = try await accessTab(args, session, purpose: "trace")
+        switch string(args, "action") ?? "" {
+        case "start":
+            guard tab.instruments.trace == nil else { return .error("Already tracing this tab. Call trace with action stop.") }
+            tab.instruments.trace = TabTrace(agent: session.name, url: tab.url)
+            return .text("Tracing this tab: from now on every step is recorded with its result, a screenshot, console and network. Call trace with action stop to save it.")
+        case "stop":
+            guard let trace = tab.instruments.trace else { return .error("This tab isn't being traced. Call trace with action start first.") }
+            tab.instruments.trace = nil
+            let format = DateFormatter()
+            format.locale = Locale(identifier: "en_US_POSIX")
+            format.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+            let url = outputFile("Wink trace \(format.string(from: trace.started))", ext: "html")
+            try trace.html().write(to: url, atomically: true, encoding: .utf8)
+            return .text("Saved \(url.path) (\(trace.steps.count) steps). It opens in any browser.")
+        default:
+            return .error("trace needs action start or stop.")
         }
     }
 

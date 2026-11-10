@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>Status</title><h1>Service status</h1>
+<button id="refresh">Refresh</button><p id="state" role="status">Not checked yet</p>
+<script>
+document.getElementById('refresh').onclick = async () => {
+  const s = document.getElementById('state');
+  try { const r = await fetch('/status.json', { cache: 'no-store' }); const j = await r.json(); s.textContent = 'All systems ' + j.state; }
+  catch (e) { s.textContent = 'You are offline. Check your connection.'; }
+};
+</script>

@@ -64,6 +64,7 @@ No TCP port is opened, so web pages can't reach the server through DNS rebinding
 | `mock_network` | Make requests return a given status and body, fail them, or take the tab offline |
 | `storage` | Cookies, localStorage and sessionStorage: get, set, delete, clear (values hidden outside localhost) |
 | `save_pdf`, `record` | Save the page as a PDF, or record the tab as an H.264 video, in Downloads |
+| `trace` | Record every step in a tab (result, screenshot, console, network) as an HTML timeline |
 | `verify` | Check text, or an element's state, value or visibility, on the live page |
 | `export_test` | The agent's steps in a tab as a Playwright test, with checks verified on the live page |
 
@@ -89,6 +90,14 @@ A model turn costs seconds; a tool call costs milliseconds. So Wink spends its e
 - **Look at what's stored.** `storage` reads and changes cookies, localStorage and sessionStorage. Outside localhost, values stay hidden (they can be session tokens), and changing them needs your OK.
 - **Show your work.** `save_pdf` and `record` (an H.264 movie, from screenshots, so it works for tabs in the background) save to Downloads; `verify` checks the live page.
 - **Keep what the agent found as a test.** `export_test` turns the agent's steps in a tab into a Playwright test that uses role-based locators, with the agent's checks verified on the live page before they're written. Mocks, offline mode, storage changes, dialogs, uploads and drags come along. Explore with an agent in your real browser, then run the test in CI with Playwright, in Chromium, Firefox and WebKit.
+
+### A private, headless browser
+
+`wink-mcp --headless` gives an agent its own browser instead of yours: an invisible Wink with a fresh, throwaway profile in a temporary folder. It starts on the first tool call and is deleted, profile and all, when the session ends. Run as many as you like side by side, in parallel sessions or in CI on a Mac (Wink's own CI drives one through `Tests/agent_e2e.py` on every change). Nobody watches a private instance, so its prompts answer themselves, as Playwright never asks; hidden and system folders still can't be uploaded.
+
+```json
+{ "mcpServers": { "wink-headless": { "command": "/Applications/Wink.app/Contents/MacOS/wink-mcp", "args": ["--headless"] } } }
+```
 
 ### Keeps working while you're away
 

@@ -10,13 +10,18 @@ import WinkEngine
 final class DebugDriver {
     static let shared = DebugDriver()
 
-    /// WINK_DEBUG_HEADLESS=1 (with WINK_DEBUG_DIR): an invisible, click-through
-    /// test instance that never activates or shows windows, so automated tests
-    /// can run next to the user's own Wink without disturbing them.
-    nonisolated static let isHeadless: Bool = {
+    /// An invisible instance that never activates or shows windows: a private
+    /// headless browser for an agent (WINK_HEADLESS=1, started by
+    /// `wink-mcp --headless`), or a test instance (WINK_DEBUG_HEADLESS=1 with
+    /// WINK_DEBUG_DIR) running next to the user's own Wink.
+    nonisolated static let isHeadless: Bool = isAgentHeadless || {
         let env = ProcessInfo.processInfo.environment
         return env["WINK_DEBUG_DIR"] != nil && env["WINK_DEBUG_HEADLESS"] == "1"
     }()
+
+    /// A private headless Wink that `wink-mcp --headless` started for one agent:
+    /// a throwaway profile nobody watches, so its prompts answer themselves.
+    nonisolated static let isAgentHeadless: Bool = ProcessInfo.processInfo.environment["WINK_HEADLESS"] == "1"
     private var sources: [DispatchSourceSignal] = []
     private var directory: URL?
 

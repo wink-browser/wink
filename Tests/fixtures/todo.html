@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Todos</title>
+<style>body{font:16px system-ui;max-width:480px;margin:40px auto}li.done span{text-decoration:line-through;color:#888}</style></head>
+<body><h1>Todos</h1>
+<input id="new" placeholder="What needs doing?" aria-label="New todo"> <button id="add">Add</button>
+<ul id="list"></ul><p id="count">0 items left</p>
+<nav><button data-f="all">All</button> <button data-f="active">Active</button> <button data-f="done">Completed</button></nav>
+<script>
+let items=[], filter='all';
+function render(){ list.innerHTML=''; items.filter(i=>filter==='all'||(filter==='done')===i.done).forEach((i,ix)=>{
+  const li=document.createElement('li'); if(i.done) li.className='done';
+  li.innerHTML='<label><input type="checkbox" '+(i.done?'checked':'')+'> <span></span></label> <button aria-label="Delete '+i.t+'">×</button>';
+  li.querySelector('span').textContent=i.t;
+  li.querySelector('input').onchange=()=>{i.done=!i.done;render()};
+  li.querySelector('button').onclick=()=>{items=items.filter(x=>x!==i);render()};
+  list.appendChild(li)});
+  const left=items.filter(i=>!i.done).length; count.textContent=left+(left===1?' item':' items')+' left'; }
+function addItem(){ if(!document.getElementById('new').value.trim())return; items.push({t:document.getElementById('new').value.trim(),done:false}); document.getElementById('new').value=''; render(); }
+add.onclick=addItem; document.getElementById('new').onkeydown=e=>{if(e.key==='Enter')addItem()};
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
+</script></body></html>

@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><title>Items</title><h1 id="h">My list</h1>
+<ul id="items"><li>Alpha <button onclick="if(confirm('Delete Alpha?')){this.parentElement.remove();msg.textContent='Alpha deleted'}">Delete Alpha</button></li></ul>
+<button onclick="const n=prompt('New list name?','My list'); if(n) h.textContent=n">Rename list</button>
+<p id="msg"></p>

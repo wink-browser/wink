@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>Board</title><style>.col{display:inline-block;width:200px;min-height:120px;border:2px dashed #999;margin:10px;vertical-align:top;padding:6px}.card{padding:8px;margin:4px;background:#eef;cursor:grab}#knob{position:absolute;left:20px;top:330px;width:40px;height:40px;background:#c66;border-radius:20px}</style>
+<h1>Board</h1>
+<div class="col" id="todo" aria-label="To do"><h2>To do</h2><div class="card" draggable="true" id="c1">Write tests</div></div>
+<div class="col" id="done" aria-label="Done"><h2>Done</h2></div>
+<p id="status">Nothing moved</p>
+<div id="knob" role="button" aria-label="Volume knob" tabindex="0"></div><div id="rail" role="button" aria-label="Rail end" tabindex="0" style="position:absolute;left:400px;top:330px;width:40px;height:40px;border:1px solid #333"></div>
+<p id="kstat" style="position:absolute;top:400px">Knob at 20</p>
+<script>
+c1.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain','c1')});
+for(const col of [todo,done]){col.addEventListener('dragover',e=>e.preventDefault());col.addEventListener('drop',e=>{e.preventDefault();const id=e.dataTransfer.getData('text/plain');col.appendChild(document.getElementById(id));document.getElementById('status').textContent='Moved "Write tests" to '+col.getAttribute('aria-label')})}
+let dragging=false,ox=0;knob.addEventListener('mousedown',e=>{dragging=true;ox=e.clientX-knob.offsetLeft});
+addEventListener('mousemove',e=>{if(dragging){knob.style.left=(e.clientX-ox)+'px'}});
+addEventListener('mouseup',e=>{if(dragging){dragging=false;kstat.textContent='Knob at '+parseInt(knob.style.left)}});
+</script>

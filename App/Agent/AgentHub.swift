@@ -234,6 +234,10 @@ final class AgentHub {
     /// Shows a prompt card and returns the chosen option index (0 = cancel).
     func prompt(symbol: String, title: String, message: String, options: [String], tab: Tab?,
                 timeout: TimeInterval = 120) async -> Int {
+        // A private headless instance has nobody to ask; the agent started it
+        // for itself, with a throwaway profile. The last option is always the
+        // permissive one (Allow, Allow on site, Allow more, OK).
+        if DebugDriver.isAgentHeadless { return max(options.count - 1, 0) }
         let app = AppDelegate.shared
         let window = tab.flatMap { app?.window(containing: $0) } ?? app?.activeWindow ?? app?.makeWindow(isPrivate: false)
         guard let window else { return 0 }

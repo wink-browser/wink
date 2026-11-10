@@ -51,6 +51,8 @@ final class AgentInstruments {
     var userAgent: String?
     let mocks: NetworkMocks
     let recorder: TabRecorder
+    /// Set while an agent traces this tab (the trace tool).
+    var trace: TabTrace?
 
     init(tab: Tab) {
         self.tab = tab

@@ -8,6 +8,11 @@
 // This process relays newline-delimited JSON-RPC in both directions. It never
 // opens a network port.
 //
+// `wink-mcp --headless` gives the agent a private browser instead of the
+// user's: an invisible Wink with a fresh, throwaway profile in a temporary
+// folder, started on the first tool call and removed when the session ends.
+// Agents can run as many as they like side by side (CI, parallel sessions).
+//
 // It is also what makes Wink pleasant to leave installed in every agent:
 // - Lazy: an agent session starting up doesn't open Wink. The handshake and
 //   the tool list come from a small file Wink writes next to its socket
@@ -30,16 +35,50 @@ func log(_ message: String) {
     text.utf8CString.withUnsafeBufferPointer { _ = Darwin.write(STDERR_FILENO, $0.baseAddress, $0.count - 1) }
 }
 
-func socketPath() -> String {
-    if let override = getenv("WINK_MCP_SOCKET"), override.pointee != 0 { return String(cString: override) }
+func installedSocketPath() -> String {
     let home = getenv("HOME").map { String(cString: $0) } ?? NSHomeDirectory()
     let folder = bundleIdentifier == "app.wink.browser" ? "Wink" : bundleIdentifier
     return home + "/Library/Application Support/\(folder)/run/mcp.sock"
 }
 
+let headless = CommandLine.arguments.contains("--headless")
+
+/// The private instance's folder (profile, socket), made 0700 by mkdtemp.
+let headlessHome: String? = {
+    guard headless else { return nil }
+    var template = Array((NSTemporaryDirectory() as NSString).appendingPathComponent("wink-XXXXXX").utf8CString)
+    let made = template.withUnsafeMutableBufferPointer { mkdtemp($0.baseAddress!) != nil }
+    return made ? String(cString: template) : nil
+}()
+
+func socketPath() -> String {
+    if let headlessHome { return headlessHome + "/mcp.sock" }
+    if let override = getenv("WINK_MCP_SOCKET"), override.pointee != 0 { return String(cString: override) }
+    return installedSocketPath()
+}
+
 let path = socketPath()
-/// What Wink last said about itself (see MCPServer.writeHandshake).
-let handshakeFile = (path as NSString).deletingLastPathComponent + "/mcp-server.json"
+/// What Wink last said about itself (see MCPServer.writeHandshake). A headless
+/// session borrows the installed Wink's, so it too starts without opening Wink.
+let handshakeFile = (headless ? installedSocketPath() : path as NSString as String)
+    .replacingOccurrences(of: "/mcp.sock", with: "/mcp-server.json")
+
+/// The private headless Wink, while it runs.
+nonisolated(unsafe) var headlessPID: pid_t = 0
+
+/// Stops the private instance and deletes its folder (profile and all).
+func cleanUpHeadless() {
+    guard headless else { return }
+    if headlessPID > 0 {
+        kill(headlessPID, SIGTERM)
+        let deadline = Date.now + 3
+        var status: Int32 = 0
+        while waitpid(headlessPID, &status, WNOHANG) == 0 && Date.now < deadline { usleep(50_000) }
+        if waitpid(headlessPID, &status, WNOHANG) == 0 { kill(headlessPID, SIGKILL); waitpid(headlessPID, &status, 0) }
+        headlessPID = 0
+    }
+    if let headlessHome { try? FileManager.default.removeItem(atPath: headlessHome) }
+}
 
 func connectSocket(_ path: String) -> Int32? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -63,6 +102,10 @@ func connectSocket(_ path: String) -> Int32? {
 }
 
 func launchWink() {
+    if headless {
+        launchHeadless()
+        return
+    }
     var args = ["/usr/bin/open", "-g"]
     // A side-by-side dev build passes its test settings on (never the release).
     if bundleIdentifier != "app.wink.browser" {
@@ -78,6 +121,32 @@ func launchWink() {
         var status: Int32 = 0
         waitpid(pid, &status, 0)
     }
+}
+
+/// Starts the private instance as this process's child, with its own home.
+func launchHeadless() {
+    guard let appBundlePath, let headlessHome else { return }
+    if headlessPID > 0 {  // a previous one died: reap it
+        var status: Int32 = 0
+        waitpid(headlessPID, &status, WNOHANG)
+    }
+    let executable = appBundlePath + "/Contents/MacOS/Wink"
+    var env = ProcessInfo.processInfo.environment
+    env["WINK_HOME"] = headlessHome + "/home"
+    env["WINK_MCP_SOCKET"] = path
+    env["WINK_HEADLESS"] = "1"
+    env["WINK_AGENT_TOKEN"] = nil
+    var cArgs: [UnsafeMutablePointer<CChar>?] = [strdup(executable), nil]
+    var cEnv = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
+    defer { cArgs.forEach { free($0) }; cEnv.forEach { free($0) } }
+    // Our stdout is the agent's JSON-RPC channel: the browser must never write to it.
+    var actions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&actions)
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    var pid: pid_t = 0
+    if posix_spawn(&pid, executable, &actions, nil, &cArgs, &cEnv) == 0 { headlessPID = pid }
 }
 
 func parentProcessPath() -> String {
@@ -162,7 +231,8 @@ final class Bridge: @unchecked Sendable {
             guard !line.isEmpty else { continue }
             handle(line)
         }
-        // The client is done: let Wink finish answering, then leave.
+        // The client is done: let Wink finish answering, then leave (a private
+        // headless Wink goes with us).
         lock.lock()
         let fd = upstream
         lock.unlock()
@@ -175,6 +245,7 @@ final class Bridge: @unchecked Sendable {
                 usleep(20_000)
             }
         }
+        cleanUpHeadless()
         exit(0)
     }
 
@@ -354,7 +425,7 @@ final class Bridge: @unchecked Sendable {
     private func output(_ data: Data) {
         outputLock.lock()
         defer { outputLock.unlock() }
-        if !writeAll(STDOUT_FILENO, data) { exit(0) }
+        if !writeAll(STDOUT_FILENO, data) { cleanUpHeadless(); exit(0) }
     }
 
     private func reply(_ id: Any?, _ result: [String: Any]) {
@@ -399,4 +470,15 @@ final class Bridge: @unchecked Sendable {
 }
 
 signal(SIGPIPE, SIG_IGN)
+// Claude Code ending the session: take the private headless Wink down with us.
+var signalSources: [DispatchSourceSignal] = []
+if headless {
+    for sig in [SIGTERM, SIGINT, SIGHUP] {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: .global())
+        source.setEventHandler { cleanUpHeadless(); exit(0) }
+        source.resume()
+        signalSources.append(source)
+    }
+}
 Bridge().run()
