@@ -260,15 +260,15 @@ final class CDPSession {
         try await moveMouse(x: from.x, y: from.y)
         _ = try await send("Input.dispatchMouseEvent", ["type": "mousePressed", "x": from.x, "y": from.y,
                                                         "button": "left", "buttons": 1, "clickCount": 1])
-        let steps = 12
+        let steps = 6
         for i in 1...steps {
             let t = Double(i) / Double(steps)
             // Moves wait for frames; with none coming (display asleep), give up on them quickly.
             let moved = (try? await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": from.x + (to.x - from.x) * t,
                                                                       "y": from.y + (to.y - from.y) * t, "button": "left", "buttons": 1],
-                                         timeout: 0.6)) != nil
+                                         timeout: 0.3)) != nil
             if !moved { break }
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(nanoseconds: 8_000_000)
             if box.data != nil { break }
         }
         if let data = box.data {
@@ -289,7 +289,7 @@ final class CDPSession {
     /// there are no frames, so don't wait long for one.
     private func moveMouse(x: Double, y: Double) async throws {
         do {
-            _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y], timeout: 0.6)
+            _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y], timeout: 0.3)
         } catch let error as CDPError where error.message.contains("timed out") {
             return
         }

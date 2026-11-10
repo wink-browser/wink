@@ -1177,60 +1177,69 @@ enum BrowserTools {
 
     // MARK: - Forms, files, drag and drop, dialogs
 
+    /// Fills every field in one action: one wait for the page to settle and
+    /// one report of what changed at the end, not one per field.
     private static func fillForm(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
         guard let fields = args["fields"] as? [[String: Any]], !fields.isEmpty else {
             return .error("fill_form needs fields, e.g. [{\"ref\":\"e3\",\"value\":\"Ada\"},{\"ref\":\"e7\",\"value\":\"true\"}].")
         }
         guard fields.count <= 40 else { return .error("At most 40 fields per call.") }
         let tab = try await accessTab(args, session, purpose: "control")
-        var lines: [String] = []
-        var failed = false
-        for (index, field) in fields.enumerated() {
-            guard let ref = string(field, "ref") else { lines.append("\(index + 1). ✗ missing ref"); failed = true; break }
+        let recorder = tab.instruments
+        if recorder.steps(for: session).isEmpty, !tab.url.isEmpty {
+            recorder.record(.init(kind: .goto, locator: [:], value: tab.url), session: session)
+        }
+        // Resolve everything first, so a bad ref fails before anything is typed.
+        var plan: [(ref: String, value: String, target: Target, locator: [String: Any]?)] = []
+        for field in fields {
+            guard let ref = string(field, "ref") else { return .error("Every field needs a ref.") }
             let value: String = (field["value"] as? String) ?? (field["value"] as? Bool).map { $0 ? "true" : "false" }
                 ?? (field["value"] as? NSNumber)?.stringValue ?? ""
-            do {
+            let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
+            if target.sensitive {
+                let ok = await AgentHub.shared.confirm(session, tab: tab, title: "\(session.name) wants to type into a sensitive field",
+                                                       message: "\(URLInput.display(tab.url)) · \(target.label) looks like a password or payment field.")
+                guard ok else { return .error("The user did not allow typing into \(target.label).") }
+            }
+            plan.append((ref, value, target, await locator(tab, ref)))
+        }
+        var lines: [String] = []
+        let text = try await act(session, tab, "Filling \(plan.count) field\(plan.count == 1 ? "" : "s")", tool: "fill_form",
+                                 target: plan.first?.target, risk: nil, changeLimit: 22) {
+            for item in plan {
                 try Task.checkCancellation()
-                let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
-                let text: String
+                let target = item.target
                 switch target.role {
                 case "checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio":
-                    text = try await setChecked(session, tab, target, ref: ref,
-                                                want: ["true", "yes", "on", "1", "checked"].contains(value.lowercased()))
+                    let want = ["true", "yes", "on", "1", "checked"].contains(item.value.lowercased())
+                    let isChecked = (try? await js(tab, "__wink.checkedOf(\(jsString(item.ref)))")) as? Bool ?? false
+                    if isChecked != want {
+                        AgentVisuals.press(tab, at: target.point)
+                        try await deliver(tab, expecting: "mousedown",
+                                          fallback: "__wink.syntheticClick(\(target.point.x), \(target.point.y), 'left', 1)") {
+                            try await tab.cdp.click(x: target.point.x, y: target.point.y)
+                        }
+                    }
+                    let now = (try? await js(tab, "__wink.checkedOf(\(jsString(item.ref)))")) as? Bool ?? want
+                    lines.append(now == want ? "\(want ? "checked" : "unchecked") \(target.label)" : "✗ \(target.label) stayed \(now ? "checked" : "unchecked")")
+                    if let locator = item.locator { recorder.record(.init(kind: want ? .check : .uncheck, locator: locator, value: ""), session: session) }
                 case "combobox", "listbox" where !target.editable:
-                    text = try await perform("select_option", ["ref": ref, "value": value], session, tab, inBatch: true)
+                    let chosen = try await js(tab, "__wink.selectOption(\(jsString(item.ref)), \(jsString(item.value)))") as? String ?? item.value
+                    lines.append("\(target.label) “\(chosen)”")
+                    if let locator = item.locator { recorder.record(.init(kind: .select, locator: locator, value: chosen), session: session) }
                 default:
-                    text = try await perform("type", ["ref": ref, "text": value], session, tab, inBatch: true)
+                    guard target.editable else { throw AgentAccessError(message: "Element \(item.ref) (\(target.role)) is not a field.") }
+                    AgentVisuals.typing(tab, in: target.rect, text: target.sensitive ? nil : item.value)
+                    let note = try await typeVerified(tab, target: target, ref: item.ref, text: item.value, clear: true)
+                    lines.append("\(target.label) “\(target.sensitive ? "(hidden)" : String(item.value.prefix(40)))”\(note)")
+                    if let locator = item.locator {
+                        recorder.record(.init(kind: .fill, locator: locator, value: item.value, sensitive: target.sensitive), session: session)
+                    }
                 }
-                lines.append("\(index + 1). " + text.replacingOccurrences(of: "\n", with: "\n   "))
-            } catch {
-                lines.append("\(index + 1). ✗ \(ref): \(error.localizedDescription)")
-                failed = true
-                break
             }
+            return "Filled " + lines.joined(separator: ", ") + "."
         }
-        return AgentToolResult(content: [.text(lines.joined(separator: "\n"))], isError: failed)
-    }
-
-    /// Checks or unchecks (clicking only if needed), like Playwright's check().
-    private static func setChecked(_ session: AgentSession, _ tab: Tab, _ target: Target, ref: String, want: Bool) async throws -> String {
-        let locator = await locator(tab, ref)
-        let isChecked = (try? await js(tab, "__wink.checkedOf(\(jsString(ref)))")) as? Bool ?? false
-        if isChecked != want {
-            _ = try await act(session, tab, "\(want ? "Checking" : "Unchecking") \(target.label)", tool: "click",
-                              target: target, risk: target.risk, changeLimit: 10) {
-                AgentVisuals.press(tab, at: target.point)
-                try await deliver(tab, expecting: "mousedown", fallback: "__wink.syntheticClick(\(target.point.x), \(target.point.y), 'left', 1)") {
-                    try await tab.cdp.click(x: target.point.x, y: target.point.y)
-                }
-                return ""
-            }
-        }
-        if let locator { tab.instruments.record(.init(kind: want ? .check : .uncheck, locator: locator, value: ""), session: session) }
-        let now = (try? await js(tab, "__wink.checkedOf(\(jsString(ref)))")) as? Bool ?? want
-        let verb = want ? "Checked" : "Unchecked"
-        if now != want { return "✗ \(target.phrase) [ref=\(ref)] stayed \(now ? "checked" : "unchecked")." }
-        return isChecked == want ? "\(target.phrase) [ref=\(ref)] was already \(want ? "checked" : "unchecked")." : "\(verb) \(target.phrase) [ref=\(ref)]."
+        return .text(text)
     }
 
     private static func drag(_ args: [String: Any], _ session: AgentSession) async throws -> AgentToolResult {
