@@ -206,7 +206,7 @@ final class MCPSessionController {
     Work in few round trips:
     - find returns refs for the elements you need (e.g. find text "Connect") with the card or row each sits in; snapshot only for an overview of an unfamiliar page; read_page with match to read one fact from a long page.
     - Act by ref with click / type / fill_form / select_option / press_key. Every action waits for the page to settle and returns "Changes": dialogs, notices, changed, gone and new elements, updated texts. Read them instead of taking a new snapshot or screenshot. Refs survive re-renders.
-    - batch runs a known sequence in one call.
+    - batch runs a whole flow in one call, even across page loads. When you know a site's selectors or field labels, target steps by selector or label and skip the lookups.
     - screenshot when visuals matter; its pixels equal click coordinates.
     For web development: console_logs; network_requests (url: one request in full); mock_network for API mocks and offline; storage for cookies and localStorage; evaluate (always allowed on localhost); emulate for phone sizes and dark mode; verify to check the page; save_pdf and record; export_test turns what you did into a Playwright test.
     The user sees your cursor and every step. Wink may ask them before you send, buy, delete, connect or upload something (never on localhost), pauses you if they take over, and limits actions per site per hour. If an action is refused or you are paused, stop and ask the user; don't retry or work around it.

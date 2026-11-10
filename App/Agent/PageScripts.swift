@@ -664,6 +664,32 @@ enum PageScripts {
         return W.refFor(best, role, nameOf(best, role));
       };
 
+      // The first visible element matching a CSS selector, as a ref.
+      W.refBySelector = (sel) => {
+        let all;
+        try { all = Array.from(document.querySelectorAll(sel)); } catch (e) { throw new Error(`Bad CSS selector "${sel}".`); }
+        const el = all.find(e => visible(e) && e.getBoundingClientRect().width > 0) || null;
+        if (!el) return null;
+        const role = roleOf(el) || el.tagName.toLowerCase();
+        return W.refFor(el, role, nameOf(el, role));
+      };
+      // A field by its label, placeholder, name or id (exact, then prefix, then contains).
+      W.fieldByLabel = (text) => {
+        const needle = String(text).toLowerCase().trim();
+        let best = null, score = 0;
+        for (const el of document.querySelectorAll('input,textarea,select,[contenteditable],[role=textbox],[role=combobox],[role=searchbox]')) {
+          if (el.type === 'hidden' || !visible(el) || el.getBoundingClientRect().width === 0) continue;
+          const role = roleOf(el) || 'textbox';
+          const names = [nameOf(el, role), el.placeholder || '', el.getAttribute('aria-label') || '', el.name || '', el.id || '']
+            .map(s => String(s).toLowerCase().trim()).filter(Boolean);
+          const s = names.some(n => n === needle) ? 3 : names.some(n => n.startsWith(needle)) ? 2 : names.some(n => n.includes(needle)) ? 1 : 0;
+          if (s > score) { best = el; score = s; if (s === 3) break; }
+        }
+        if (!best) return null;
+        const role = roleOf(best) || 'textbox';
+        return W.refFor(best, role, nameOf(best, role));
+      };
+
       W.findByText = (text, soft) => {
         const needle = String(text).toLowerCase().trim();
         const dialogs = dialogsNow();
@@ -839,7 +865,7 @@ enum PageScripts {
           if (!orphans.has(key)) orphans.set(key, []);
           orphans.get(key).push(k);
         }
-        const nowLines = [], freshLines = [];
+        const nowLines = [], freshLines = [], nowEls = new Set();
         const reported = new Set();
         const skip = new Set(opened);
         const candidates = [];
@@ -856,7 +882,7 @@ enum PageScripts {
           if (list && list.length) {
             const k = list.shift();
             rebind(k.ref, el);
-            if (stateKey(el, role) !== k.state) nowLines.push({ line: describe(el, role), d: dist(el) });
+            if (stateKey(el, role) !== k.state) { nowLines.push({ line: describe(el, role), d: dist(el) }); nowEls.add(el); }
           } else {
             freshLines.push({ line: describe(el, role), d: dist(el) });
           }
@@ -873,6 +899,7 @@ enum PageScripts {
           const k = ref && st.known.find(x => x.ref === ref);
           if (k && stateKey(el, k.sig.role) === k.state) continue;
           nowLines.push({ line: describe(el), d: dist(el) });
+          nowEls.add(el);
         }
         nowLines.sort((a, b) => a.d - b.d).slice(0, 8).forEach(({ line }) => lines.push('now: ' + line));
         const gone = [];
@@ -897,7 +924,7 @@ enum PageScripts {
 
         // Focus is news only when it lands in a field (e.g. a composer opened).
         const f = deepActive();
-        if (f && f !== st.focus && isEditable(f) && !inOpened(f) && !reported.has(f)) {
+        if (f && f !== st.focus && isEditable(f) && !inOpened(f) && !reported.has(f) && !nowEls.has(f)) {
           lines.push(`focus: ${describe(f, roleOf(f) || 'textbox')}`);
         }
         if (location.href !== st.url) lines.push(`URL now: ${location.href}`);

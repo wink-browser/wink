@@ -122,6 +122,18 @@ _, text = tool("click", text="Create account")
 check("mocked API", "Welcome, Ada!" in text, text)
 export("mocked signup", {"text": "Welcome, Ada!"})
 
+# A whole flow in one batch, by CSS selector and field label, no lookups.
+tool("tab_open", url=BASE + "signup.html")
+error, text = tool("batch", steps=[
+    {"action": "type", "label": "Full name", "text": "Grace Hopper"},
+    {"action": "type", "selector": "input[name=email]", "text": "grace@example.com"},
+    {"action": "select_option", "label": "Plan", "value": "Team"},
+    {"action": "click", "selector": "input[name=terms]"},
+    {"action": "click", "text": "Create account"},
+    {"action": "wait_for", "text": "Welcome"},
+])
+check("batch by selector and label", not error and "Welcome, Ada!" in text, text)
+
 # Offline and back.
 tool("tab_open", url=BASE + "status.html")
 tool("mock_network", offline=True)

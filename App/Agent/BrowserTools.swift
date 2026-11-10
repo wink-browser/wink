@@ -59,7 +59,9 @@ enum BrowserTools {
         "properties": [
             "action": ["type": "string", "enum": ["click", "type", "press_key", "select_option", "hover", "scroll", "wait_for", "navigate"]],
             "ref": prop("string", "Element ref."),
-            "text": prop("string", "click: label to click; type: text; wait_for: text."),
+            "selector": prop("string", "CSS selector of the element to act on (wait_for: to wait for)."),
+            "label": prop("string", "type/select_option: the field's label, placeholder or name."),
+            "text": prop("string", "click: visible text to click; type: text to type; wait_for: text."),
             "x": prop("number", "click: x."), "y": prop("number", "click: y."),
             "key": prop("string", "press_key: key."),
             "value": prop("string", "select_option: option."),
@@ -68,7 +70,6 @@ enum BrowserTools {
             "amount": prop("integer", "scroll: pixels."),
             "clear": prop("boolean", "type: replace text (default true)."),
             "submit": prop("boolean", "type: press Enter after."),
-            "selector": prop("string", "wait_for: CSS selector."),
             "gone": prop("boolean", "wait_for: until gone."),
             "timeout_ms": prop("integer", "wait_for: max wait."),
             "double_click": prop("boolean", "click: double-click."),
@@ -130,19 +131,20 @@ enum BrowserTools {
                            "full_page": prop("boolean", "Whole page, not just the viewport."), "tab_id": tabID],
               required: [], readOnly: true),
         .init(name: "click",
-              description: "Click by ref (best), visible text, or x/y. Returns what changed: dialogs, notices, new/changed/gone elements, updated texts. Refs survive re-renders.",
-              properties: ["ref": prop("string", "Element ref, e.g. e12."),
+              description: "Click by ref (best), CSS selector, visible text, or x/y. Returns what changed: dialogs, notices, new/changed/gone elements, updated texts. Refs survive re-renders.",
+              properties: ["ref": prop("string", "Element ref, e.g. e12."), "selector": prop("string", "CSS selector."),
                            "text": prop("string", "Visible label, if you have no ref."),
                            "x": prop("number", "x from your latest screenshot."), "y": prop("number", "y."),
                            "double_click": prop("boolean", "Double-click."),
                            "button": ["type": "string", "enum": ["left", "right", "middle"]], "tab_id": tabID],
               required: [], readOnly: false),
         .init(name: "type",
-              description: "Type into a field by ref; replaces its text unless clear:false, submit:true presses Enter. Checks the text landed.",
-              properties: ["ref": prop("string", "Field ref."), "text": prop("string", "Text."),
+              description: "Type into a field (by ref, CSS selector or label); replaces its text unless clear:false, submit:true presses Enter. Checks the text landed.",
+              properties: ["ref": prop("string", "Field ref."), "selector": prop("string", "CSS selector."),
+                           "label": prop("string", "The field's label, placeholder or name."), "text": prop("string", "Text."),
                            "clear": prop("boolean", "Replace current text (default true)."),
                            "submit": prop("boolean", "Press Enter after."), "tab_id": tabID],
-              required: ["ref", "text"], readOnly: false),
+              required: ["text"], readOnly: false),
         .init(name: "fill_form",
               description: "Fill many fields in one call. value: text for text fields, an option for selects, true/false for checkboxes, radios and switches.",
               properties: ["fields": ["type": "array", "description": "Fields in order.",
@@ -154,10 +156,12 @@ enum BrowserTools {
               properties: ["key": prop("string", "Key, modifiers joined by '+'."), "tab_id": tabID],
               required: ["key"], readOnly: false),
         .init(name: "select_option", description: "Choose a <select> option by value or text.",
-              properties: ["ref": prop("string", "Select ref."), "value": prop("string", "Option."), "tab_id": tabID],
-              required: ["ref", "value"], readOnly: false),
+              properties: ["ref": prop("string", "Select ref."), "selector": prop("string", "CSS selector."),
+                           "label": prop("string", "The select's label."), "value": prop("string", "Option."), "tab_id": tabID],
+              required: ["value"], readOnly: false),
         .init(name: "hover", description: "Hover an element; returns menus or tooltips that opened.",
-              properties: ["ref": prop("string", "Element ref."), "tab_id": tabID], required: ["ref"], readOnly: false),
+              properties: ["ref": prop("string", "Element ref."), "selector": prop("string", "CSS selector."), "tab_id": tabID],
+              required: [], readOnly: false),
         .init(name: "drag", description: "Drag an element onto another (HTML5 drag and drop or pointer-based). Give each end by ref or by visible text.",
               properties: ["from_ref": prop("string", "What to drag."), "to_ref": prop("string", "Where to drop it."),
                            "from_text": prop("string", "Or: text shown on what to drag."),
@@ -175,7 +179,7 @@ enum BrowserTools {
                            "ref": prop("string", "Scrollable element."), "tab_id": tabID],
               required: ["direction"], readOnly: false),
         .init(name: "batch",
-              description: "Run up to 25 steps in one call (click, type, press_key, select_option, hover, scroll, wait_for, navigate), each settling first; stops at the first failure. Steps take their tool's fields.",
+              description: "Run a whole flow in one call, across page loads: up to 40 steps of navigate, click, type, select_option, press_key, hover, scroll, wait_for. Target by ref, CSS selector, visible text or field label, so a flow you know needs no lookup first. Each step waits for its element and the page; stops at the first failure.",
               properties: ["steps": ["type": "array", "items": stepSchema, "description": "Steps in order."], "tab_id": tabID],
               required: ["steps"], readOnly: false),
         .init(name: "wait_for", description: "Wait for text or a CSS selector to appear (gone:true: disappear).",
@@ -864,6 +868,24 @@ enum BrowserTools {
     /// A ref, a visible label (waited for briefly, since dialogs take a beat
     /// to open), or screenshot coordinates.
     private static func resolveTarget(_ tab: Tab, _ args: [String: Any], wait: TimeInterval) async throws -> Target {
+        // A CSS selector or a field label: waited for briefly, since the step
+        // before may have just loaded the page.
+        let lookup: (expression: String, what: String)? =
+            string(args, "selector").map { ("__wink.refBySelector(\(jsString($0)))", "matching “\($0)”") }
+            ?? string(args, "label").map { ("__wink.fieldByLabel(\(jsString($0)))", "labelled “\($0)”") }
+        if string(args, "ref") == nil, let lookup {
+            let deadline = Date().addingTimeInterval(max(wait, 1))
+            while true {
+                if let ref = try? await js(tab, lookup.expression) as? String,
+                   let target = target(from: try await js(tab, "__wink.locate(\(jsString(ref)))")) {
+                    return target
+                }
+                if Date() > deadline {
+                    throw AgentAccessError(message: "No visible element \(lookup.what). Use find or snapshot for refs.")
+                }
+                try await Task.sleep(nanoseconds: 120_000_000)
+            }
+        }
         if let ref = string(args, "ref") {
             guard let target = target(from: try await js(tab, "__wink.locate(\(jsString(ref)))")) else {
                 throw AgentAccessError(message: "Could not find element \(ref).")
@@ -931,7 +953,7 @@ enum BrowserTools {
         }
         switch action {
         case "click":
-            let target = try await resolveTarget(tab, args, wait: inBatch ? 4 : 1.5)
+            let target = try await resolveTarget(tab, args, wait: inBatch ? 6 : 1.5)
             let double = bool(args, "double_click") ?? false
             let clicks = double ? 2 : 1
             let button = string(args, "button") ?? "left"
@@ -954,10 +976,12 @@ enum BrowserTools {
             return result
 
         case "type":
-            guard let ref = string(args, "ref"), let text = args["text"] as? String else {
-                throw AgentAccessError(message: "type needs ref and text.")
+            guard let text = args["text"] as? String,
+                  string(args, "ref") != nil || string(args, "selector") != nil || string(args, "label") != nil else {
+                throw AgentAccessError(message: "type needs text, and the field's ref, selector or label.")
             }
-            let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
+            let target = try await resolveTarget(tab, args, wait: inBatch ? 6 : 2)
+            guard let ref = target.ref else { throw AgentAccessError(message: "Could not find that field.") }
             guard target.editable else {
                 throw AgentAccessError(message: "Element \(ref) (\(target.role)) is not editable. Click it first or choose an input.")
             }
@@ -1006,10 +1030,12 @@ enum BrowserTools {
             return result
 
         case "select_option", "select":
-            guard let ref = string(args, "ref"), let value = args["value"] as? String else {
-                throw AgentAccessError(message: "select_option needs ref and value.")
+            guard let value = args["value"] as? String,
+                  string(args, "ref") != nil || string(args, "selector") != nil || string(args, "label") != nil else {
+                throw AgentAccessError(message: "select_option needs value, and the select's ref, selector or label.")
             }
-            let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
+            let target = try await resolveTarget(tab, args, wait: inBatch ? 6 : 2)
+            guard let ref = target.ref else { throw AgentAccessError(message: "Could not find that select.") }
             let locator = await locator(tab, ref)
             var chosenLabel = value
             let result = try await act(session, tab, "Choosing “\(value.prefix(30))”", tool: "select_option", target: target,
@@ -1022,8 +1048,9 @@ enum BrowserTools {
             return result
 
         case "hover":
-            guard let ref = string(args, "ref") else { throw AgentAccessError(message: "hover needs ref.") }
-            let target = try await resolveTarget(tab, ["ref": ref], wait: 0)
+            guard string(args, "ref") != nil || string(args, "selector") != nil else { throw AgentAccessError(message: "hover needs ref or selector.") }
+            let target = try await resolveTarget(tab, args, wait: inBatch ? 6 : 1)
+            guard let ref = target.ref else { throw AgentAccessError(message: "Could not find that element.") }
             let locator = await locator(tab, ref)
             let result = try await act(session, tab, "Pointing at \(target.label)", tool: "hover", target: target,
                                        risk: nil, changeLimit: limit) {
@@ -1081,7 +1108,7 @@ enum BrowserTools {
         guard let steps = args["steps"] as? [[String: Any]], !steps.isEmpty else {
             return .error("batch needs steps, e.g. [{\"action\":\"click\",\"ref\":\"e12\"},{\"action\":\"click\",\"text\":\"Send\"}].")
         }
-        guard steps.count <= 25 else { return .error("At most 25 steps per batch.") }
+        guard steps.count <= 40 else { return .error("At most 40 steps per batch.") }
         let tab = try await accessTab(args, session, purpose: "control")
         var lines: [String] = []
         var failed = false
