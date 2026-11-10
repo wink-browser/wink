@@ -44,9 +44,9 @@ The first build compiles CEF's C++ wrapper (~2 min on an M3); incremental builds
 | ⌘F, ⌘G | Find in page |
 | ⌥⌘I | Developer tools |
 
-### Connect Claude Code
+### Claude Code
 
-**Agents › Connect Claude Code…** registers Wink with Claude Code after you confirm. It runs:
+Install Wink in Applications and open it once: if Claude Code is on your Mac, Wink adds itself to Claude Code's MCP servers (user scope), so every Claude Code session can browse with it. Nothing opens until an agent actually uses a tool; then Wink opens by itself. Turn it off in **Settings › Agents** (or with `claude mcp remove wink`) and Wink won't add itself again. To add it by hand:
 
 ```sh
 claude mcp add --scope user wink -- "/Applications/Wink.app/Contents/MacOS/wink-mcp"

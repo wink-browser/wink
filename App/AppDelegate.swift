@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AgentHub.shared.start()
         UpdateCenter.shared.start()
+        ClaudeCodeLink.shared.linkAtLaunch()
         DebugDriver.shared.startIfRequested()
 
         if WinkSettings.shared.restoreSession, let snapshot = SessionStore.shared.load(), !snapshot.windows.isEmpty {

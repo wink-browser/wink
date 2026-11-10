@@ -212,7 +212,9 @@ final class DebugDriver {
         case "select": window?.selectTab(atSidebarIndex: Int(argument) ?? 0)
         case "close": window?.closeActiveTab()
         case "ask": window?.showAgentPanel(); AgentPanelModel.shared.send(argument)
-        case "settings": app.showSettings(nil)
+        case "settings":
+            if !argument.isEmpty { SettingsNavigation.shared.tab = argument }
+            app.showSettings(nil)
         case "private":
             let window = app.makeWindow(isPrivate: true)
             window.newTab(url: argument, activate: true)

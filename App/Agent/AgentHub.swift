@@ -96,22 +96,31 @@ final class AgentHub {
 
     func start() {
         installTakeoverMonitor()
-        guard WinkSettings.shared.mcpServerEnabled else { return }
-        let server = MCPServer(socketPath: WinkPaths.shared.mcpSocketPath)
-        if server.start() {
-            self.server = server
-        } else {
-            NSLog("[wink] MCP server failed to start")
-        }
+        restartServer()
     }
 
     /// Applies the "Let agents connect" setting immediately.
     func restartServer() {
         server?.stop()
         server = nil
-        guard WinkSettings.shared.mcpServerEnabled else { return }
-        let server = MCPServer(socketPath: WinkPaths.shared.mcpSocketPath)
-        if server.start() { self.server = server }
+        let socketPath = WinkPaths.shared.mcpSocketPath
+        guard WinkSettings.shared.mcpServerEnabled else {
+            MCPSessionController.removeHandshake(nextTo: socketPath)
+            return
+        }
+        let server = MCPServer(socketPath: socketPath)
+        if server.start() {
+            self.server = server
+            MCPSessionController.writeHandshake(nextTo: socketPath)
+        } else {
+            NSLog("[wink] MCP server failed to start")
+        }
+    }
+
+    /// The tool list changed (a setting): agents opening Wink later see it.
+    func refreshHandshake() {
+        guard server != nil else { return }
+        MCPSessionController.writeHandshake(nextTo: WinkPaths.shared.mcpSocketPath)
     }
 
     func shutdown() {

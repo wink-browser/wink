@@ -33,8 +33,10 @@ final class UpdateCenter: NSObject {
 
     /// Only Developer ID–signed builds update; ad-hoc dev builds stay silent
     /// (WINK_UPDATE_TEST=1 overrides for testing).
-    static let isReleaseBuild: Bool = {
-        if ProcessInfo.processInfo.environment["WINK_UPDATE_TEST"] == "1" { return true }
+    static let isReleaseBuild: Bool = ProcessInfo.processInfo.environment["WINK_UPDATE_TEST"] == "1" || isDeveloperIDSigned
+
+    /// Signed with a team identity (Developer ID), not ad hoc.
+    static let isDeveloperIDSigned: Bool = {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return false }
         var staticCode: SecStaticCode?
@@ -113,7 +115,7 @@ final class UpdateCenter: NSObject {
     private func feedQuery() -> [(String, String)] {
         let now = Date()
         let day = Self.utcDay(now), week = Self.isoWeek(now), month = String(day.prefix(7))
-        var items = [("v", Self.appVersion), ("os", Self.macOSVersion)]
+        let items = [("v", Self.appVersion), ("os", Self.macOSVersion)]
         // 0.3 and earlier recorded the day of their (counted) daily ping as lastDay.
         let countedDay = defaults.string(forKey: "updates.countedDay") ?? defaults.string(forKey: "updates.lastDay")
         guard WinkSettings.shared.shareUsageCounts, countedDay != day else {

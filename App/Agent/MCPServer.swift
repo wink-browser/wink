@@ -198,7 +198,7 @@ final class MCPSessionController {
     static let supportedVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 
     static let instructions = """
-    Wink is the user's web browser. These tools let you browse on their behalf.
+    Wink is the user's web browser. These tools let you browse on their behalf: research, forms, and building or testing web apps (localhost works). Wink opens by itself when you first use a tool.
     Get a tab first: tab_open for a new one you own, get_active_tab for the page the user is viewing, tabs_list for tabs you can use.
     Work in few round trips:
     - find returns refs for the elements you need (e.g. find text "Connect") with the card or row each sits in; use snapshot only for an overview of an unfamiliar page.
@@ -281,26 +281,14 @@ final class MCPSessionController {
                 session = makeSession(clientName: client["name"] as? String ?? "",
                                       version: client["version"] as? String ?? "")
             }
-            reply(id, [
-                "protocolVersion": version,
-                "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": "wink", "title": "Wink Browser",
-                               "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1"],
-                "instructions": Self.instructions,
-            ])
+            var result = Self.serverDescription
+            result["protocolVersion"] = version
+            reply(id, result)
         case "ping":
             reply(id, [:])
         case "tools/list":
             let session = ensureSession()
-            reply(id, ["tools": BrowserTools.definitions(for: session).map { tool in
-                [
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.inputSchema,
-                    "annotations": ["readOnlyHint": tool.readOnly, "openWorldHint": true,
-                                    "destructiveHint": ["tab_close", "evaluate", "batch"].contains(tool.name)],
-                ] as [String: Any]
-            }])
+            reply(id, ["tools": Self.encode(BrowserTools.definitions(for: session))])
         case "tools/call":
             guard let id else { return }
             let session = ensureSession()
@@ -340,6 +328,50 @@ final class MCPSessionController {
         let created = makeSession(clientName: "", version: "")
         session = created
         return created
+    }
+
+    /// The initialize result, without the negotiated protocol version.
+    static var serverDescription: [String: Any] {
+        [
+            "capabilities": ["tools": ["listChanged": false]],
+            "serverInfo": ["name": "wink", "title": "Wink Browser",
+                           "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1"],
+            "instructions": instructions,
+        ]
+    }
+
+    static func encode(_ tools: [AgentToolDefinition]) -> [[String: Any]] {
+        tools.map { tool in
+            [
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.inputSchema,
+                "annotations": ["readOnlyHint": tool.readOnly, "openWorldHint": true,
+                                "destructiveHint": ["tab_close", "evaluate", "batch"].contains(tool.name)],
+            ] as [String: Any]
+        }
+    }
+
+    /// What `wink-mcp` answers an agent's handshake with while Wink is closed,
+    /// so a new agent session doesn't open Wink before it actually browses.
+    /// Written next to the socket, readable by the user only.
+    static func writeHandshake(nextTo socketPath: String) {
+        var description = serverDescription
+        description["protocolVersions"] = supportedVersions
+        description["tools"] = encode(BrowserTools.externalDefinitions)
+        guard let data = try? JSONSerialization.data(withJSONObject: description, options: [.withoutEscapingSlashes, .sortedKeys])
+        else { return }
+        let url = handshakeURL(nextTo: socketPath)
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    static func removeHandshake(nextTo socketPath: String) {
+        try? FileManager.default.removeItem(at: handshakeURL(nextTo: socketPath))
+    }
+
+    private static func handshakeURL(nextTo socketPath: String) -> URL {
+        URL(fileURLWithPath: socketPath).deletingLastPathComponent().appendingPathComponent("mcp-server.json")
     }
 
     static func encode(_ result: AgentToolResult) -> [String: Any] {

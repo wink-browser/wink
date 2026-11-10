@@ -9,10 +9,24 @@ Both use the same tools, `App/Agent/BrowserTools.swift`, and the same consent au
 
 ## Connecting an MCP client
 
-Wink's MCP server listens on `~/Library/Application Support/Wink/run/mcp.sock`. The socket is `0600` in a `0700` directory, and Wink checks every peer's uid. MCP clients launch `wink-mcp`, a small stdio bridge inside the app bundle. If Wink isn't running, the bridge launches it.
+Wink's MCP server listens on `~/Library/Application Support/Wink/run/mcp.sock`. The socket is `0600` in a `0700` directory, and Wink checks every peer's uid. MCP clients launch `wink-mcp`, a small stdio bridge inside the app bundle.
+
+The bridge is built to stay installed in every agent:
+
+- **Lazy.** While Wink is closed, the bridge answers the handshake and the tool list from `run/mcp-server.json`, which Wink writes whenever its MCP server starts. An agent session that never browses never opens Wink; the first tool call does (`open -g`).
+- **Resilient.** If Wink quits, restarts for an update or crashes, calls in flight get an error result instead of hanging, and the next call reopens Wink and replays the client's handshake. The agent keeps its tools for the rest of its session.
+
+The installed release adds itself to Claude Code at launch (`ClaudeCodeLink`, `App/Agent/AgentIntegrations.swift`):
+
+- It runs `claude mcp add --scope user wink -- <bridge>` when Claude Code has no `wink` server.
+- It repairs a registration whose bridge no longer exists (Wink moved).
+- It leaves any other `wink` server alone.
+- It never re-adds itself once the user removes it, in Settings › Agents or with `claude mcp remove`.
+
+Development builds and copies outside an Applications folder never register.
 
 ```sh
-# Claude Code (or use Agents › Connect Claude Code… in Wink)
+# By hand (Settings › Agents › "Claude Code can browse with Wink" does the same)
 claude mcp add --scope user wink -- "/Applications/Wink.app/Contents/MacOS/wink-mcp"
 ```
 

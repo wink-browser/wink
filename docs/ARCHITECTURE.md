@@ -44,7 +44,7 @@ CEF browsers embedded in a native view use CEF's lightweight *Alloy* runtime sty
 | `App/UI/` | Root layout, sidebar, content card + overlays, agent visuals (aurora glow, cursor, page effects), Winky's prompt bar over the page (`WinkyBar.swift`) and welcome (`Welcome.swift`), command bar, menus, settings |
 | `App/Agent/` | `AgentHub` (consent, activity, pause/take-over, Stop), `Guardrails`, `BrowserTools`, `CDPSession`, `PageScripts` (JS), `MCPServer`, `ClaudeAPIEngine`, `ClaudeCodeEngine`, agent panel |
 | `App/Services/` | History (SQLite), favicons, downloads, sessions, tab sleeping, content-blocker settings sync, updates through Sparkle with the anonymous counts (`Updates.swift`), importing logins, history and bookmarks from other browsers (`BrowserImport.swift`) |
-| `Bridge/` | `wink-mcp`: stdio ⇄ unix-socket relay for MCP clients |
+| `Bridge/` | `wink-mcp`: stdio ⇄ unix-socket relay for MCP clients; answers the handshake while Wink is closed, opens Wink on the first tool call, reconnects after a restart |
 | `Resources/` | Info.plists, app icon and the cut-out eye (both built from `Brand/wink-eye.jpg` by `make icon`), blocklist (+ NOTICE) |
 | `scripts/` | `bootstrap.sh`, `bundle.sh` (assemble + sign), `release.sh` (Developer ID + notarization + DMG), `update_blocklist.py`, `make_icon.swift` |
 | `Tests/` | C++ unit tests for the content blocker |

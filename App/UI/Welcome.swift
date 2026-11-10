@@ -177,12 +177,24 @@ private struct WelcomeCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("I'm one ⌘J away.")
                 .font(.system(size: 26, weight: .semibold))
-            Text("Ask me about any page, or give me a task, and I'll do it right beside you. Claude Code can drive Wink too.")
+            Text("Ask me about any page, or give me a task, and I'll do it right beside you."
+                 + (ClaudeCodeLink.shared.status == .connected ? "" : " Claude Code can drive Wink too."))
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if ClaudeCodeLocator.find() != nil {
-                Button("Connect Claude Code…") { AgentIntegrations.connectClaudeCode() }
+            if ClaudeCodeLink.shared.status == .connected {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Claude Code can browse with Wink", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .medium))
+                    Text("Wink added itself to Claude Code. Ask it to “open localhost:3000 in Wink”; Wink asks you before it browses. Turn this off in Settings › Agents.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 4)
+            } else if ClaudeCodeLocator.find() != nil {
+                Button("Connect Claude Code") { ClaudeCodeLink.shared.connect() }
+                    .disabled(ClaudeCodeLink.shared.busy)
                     .padding(.top, 4)
             } else {
                 Text("To chat with me, add an Anthropic API key in Settings › Agents, or install Claude Code.")

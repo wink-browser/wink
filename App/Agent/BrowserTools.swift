@@ -198,10 +198,14 @@ enum BrowserTools {
         required: ["tool_name", "input"], readOnly: true)
 
     static func definitions(for session: AgentSession) -> [AgentToolDefinition] {
-        var list = definitions
-        if !WinkSettings.shared.allowAgentJavaScript { list.removeAll { $0.name == "evaluate" } }
+        var list = externalDefinitions
         if session.trusted && session.origin == .mcp { list.append(approvalTool) }
         return list
+    }
+
+    /// The tools any connected agent gets.
+    static var externalDefinitions: [AgentToolDefinition] {
+        WinkSettings.shared.allowAgentJavaScript ? definitions : definitions.filter { $0.name != "evaluate" }
     }
 
     /// SF Symbol for a tool, shared by the activity log and the agent panel.

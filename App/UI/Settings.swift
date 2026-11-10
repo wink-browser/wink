@@ -15,14 +15,24 @@ enum SettingsWindow {
     }
 }
 
+/// Which Settings tab shows (so other places can open a specific one).
+@MainActor
+@Observable
+final class SettingsNavigation {
+    static let shared = SettingsNavigation()
+    var tab = "general"
+}
+
 struct SettingsView: View {
+    @Bindable private var navigation = SettingsNavigation.shared
+
     var body: some View {
-        TabView {
-            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
-            PrivacySettings().tabItem { Label("Privacy", systemImage: "hand.raised") }
-            AgentSettings().tabItem { Label("Agents", systemImage: "sparkles") }
-            PerformanceSettings().tabItem { Label("Performance", systemImage: "gauge.with.dots.needle.67percent") }
-            AboutSettings().tabItem { Label("About", systemImage: "info.circle") }
+        TabView(selection: $navigation.tab) {
+            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+            PrivacySettings().tabItem { Label("Privacy", systemImage: "hand.raised") }.tag("privacy")
+            AgentSettings().tabItem { Label("Agents", systemImage: "sparkles") }.tag("agents")
+            PerformanceSettings().tabItem { Label("Performance", systemImage: "gauge.with.dots.needle.67percent") }.tag("performance")
+            AboutSettings().tabItem { Label("About", systemImage: "info.circle") }.tag("about")
         }
         .frame(width: 640, height: 560)
     }
@@ -173,20 +183,11 @@ struct AgentSettings: View {
             Section {
                 Toggle("Let agents connect to Wink (MCP)", isOn: $settings.mcpServerEnabled)
                     .onChange(of: settings.mcpServerEnabled) { AgentHub.shared.restartServer() }
-                LabeledContent("Claude Code") {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Button("Connect Claude Code") { AgentIntegrations.connectClaudeCode() }
-                        Button("Copy Setup Command") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(AgentIntegrations.claudeCodeAddCommand, forType: .string)
-                        }
-                        .buttonStyle(.link).font(.caption)
-                    }
-                }
+                ClaudeCodeLinkRow()
             } header: {
                 Text("External agents")
             } footer: {
-                Text("Agents connect through a private socket only you can reach. Wink asks before any new agent can browse, and agents only see tabs they open or that you share.")
+                Text("Agents connect through a private socket only you can reach, and Wink opens when one starts browsing. Wink asks before any new agent can browse, and agents only see tabs they open or that you share.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
@@ -215,6 +216,7 @@ struct AgentSettings: View {
                     Text("My profile and logins").tag(AgentBrowsingProfile.shared)
                 }
                 Toggle("Allow agents to run JavaScript in pages", isOn: $settings.allowAgentJavaScript)
+                    .onChange(of: settings.allowAgentJavaScript) { AgentHub.shared.refreshHandshake() }
                 ForEach(settings.agentProtectedSites, id: \.self) { site in
                     HStack {
                         Image(systemName: "lock.shield").foregroundStyle(.secondary)
@@ -278,6 +280,38 @@ struct AboutSettings: View {
                 .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Settings › Agents: whether Claude Code has Wink's browser tools.
+struct ClaudeCodeLinkRow: View {
+    @Bindable private var link = ClaudeCodeLink.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Claude Code can browse with Wink", isOn: Binding(
+                get: { link.status == .connected },
+                set: { $0 ? link.connect() : link.disconnect() }))
+                .disabled(link.busy || link.status == .notInstalled || !WinkSettings.shared.mcpServerEnabled)
+            HStack(spacing: 8) {
+                Text(detail)
+                Spacer(minLength: 0)
+                Button("Copy Setup Command") { link.copyAddCommand() }
+                    .buttonStyle(.link)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .onAppear { link.refresh() }
+    }
+
+    private var detail: String {
+        switch link.status {
+        case .connected: "In Claude Code's MCP servers, for every project. Try “open localhost:3000 in Wink”."
+        case .otherCopy(let path): "Claude Code uses the Wink at \((path as NSString).deletingLastPathComponent.replacingOccurrences(of: "/Contents/MacOS", with: "")). Turn on to use this one."
+        case .notInstalled: "Install Claude Code and Wink connects to it by itself."
+        case .notConnected, .unknown: "Off. Turn on to add Wink to Claude Code's MCP servers."
+        }
     }
 }
 
