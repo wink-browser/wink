@@ -449,10 +449,15 @@ final class Bridge: @unchecked Sendable {
 
     // MARK: Handshake file
 
+    /// The tools as Wink described them last time, if that was this very
+    /// version (after an update, or for a headless session borrowing the
+    /// installed Wink's file, an older list would hide new tools).
     static func handshake() -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: handshakeFile),
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              object["serverInfo"] != nil, object["tools"] != nil else { return nil }
+              let info = object["serverInfo"] as? [String: Any], object["tools"] != nil,
+              info["version"] as? String == Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        else { return nil }
         return object
     }
 
