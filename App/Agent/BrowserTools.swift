@@ -478,10 +478,12 @@ enum BrowserTools {
     /// Waits for the page to react to an action: a navigation (then its load),
     /// or DOM mutations going quiet. Polled from Swift, so pages in background
     /// tabs (whose timers Chromium throttles) settle just as fast.
-    private static func settle(_ tab: Tab, patient: Bool) async -> Settled {
+    private static func settle(_ tab: Tab, patient: Bool, quick: Bool = false) async -> Settled {
         let start = Date()
-        let firstChange = patient ? 1.4 : 0.35   // give up waiting for any reaction
-        let minimum = patient ? 0.5 : 0.08
+        // quick: typing in a known flow (batch) rarely changes the page, and
+        // the next step waits for its own element anyway.
+        let firstChange = patient ? 1.4 : quick ? 0.06 : 0.35   // give up waiting for any reaction
+        let minimum = patient ? 0.5 : quick ? 0.03 : 0.08
         let quiet = 0.11
         let maximum = patient ? 4.0 : 1.8
         while true {
@@ -923,7 +925,7 @@ enum BrowserTools {
     /// cursor, the action itself, then waiting for and describing its effect.
     private static func act(_ session: AgentSession, _ tab: Tab, _ description: String, tool: String,
                             target: Target?, risk: ConsequentialAction?, riskVerb: String = "click",
-                            changeLimit: Int, _ body: () async throws -> String) async throws -> String {
+                            changeLimit: Int, quick: Bool = false, _ body: () async throws -> String) async throws -> String {
         try await AgentHub.shared.waitWhilePaused(session)
         if let risk {
             AgentHub.shared.waiting(tab, "Waiting for your OK")
@@ -942,14 +944,14 @@ enum BrowserTools {
             }
             _ = try? await js(tab, "__wink.watch()")
             let line = try await body()
-            let settled = await settle(tab, patient: risk != nil)
+            let settled = await settle(tab, patient: risk != nil, quick: quick && risk == nil)
             return line + (await changes(tab, settled, near: target, limit: changeLimit))
         }
     }
 
     private static func perform(_ action: String, _ args: [String: Any], _ session: AgentSession, _ tab: Tab,
                                 inBatch: Bool) async throws -> String {
-        let limit = inBatch ? 10 : 22
+        let limit = inBatch ? (args["_last"] as? Bool == true ? 16 : 4) : 22
         let recorder = tab.instruments
         if recorder.steps(for: session).isEmpty, !tab.url.isEmpty {
             recorder.record(.init(kind: .goto, locator: [:], value: tab.url), session: session)
@@ -998,7 +1000,7 @@ enum BrowserTools {
             let submit = bool(args, "submit") ?? false
             let locator = await locator(tab, ref)
             let result = try await act(session, tab, "Typing into \(target.label)", tool: "type", target: target,
-                                       risk: nil, changeLimit: limit) {
+                                       risk: nil, changeLimit: limit, quick: inBatch && !submit) {
                 AgentVisuals.typing(tab, in: target.rect, text: target.sensitive ? nil : text)
                 let note = try await typeVerified(tab, target: target, ref: ref, text: text, clear: clear)
                 let shown = target.sensitive ? "(hidden)" : "“\(text.prefix(60))”"
@@ -1042,7 +1044,7 @@ enum BrowserTools {
             let locator = await locator(tab, ref)
             var chosenLabel = value
             let result = try await act(session, tab, "Choosing “\(value.prefix(30))”", tool: "select_option", target: target,
-                                       risk: nil, changeLimit: limit) {
+                                       risk: nil, changeLimit: limit, quick: inBatch) {
                 let chosen = try await js(tab, "__wink.selectOption(\(jsString(ref)), \(jsString(value)))") as? String ?? value
                 chosenLabel = chosen
                 return "Selected “\(chosen)” in \(target.label)."
@@ -1145,6 +1147,8 @@ enum BrowserTools {
             let action = (step["action"] as? String ?? "").lowercased()
             do {
                 try Task.checkCancellation()
+                var step = step
+                step["_last"] = index == steps.count - 1
                 let text = try await perform(action, step, session, tab, inBatch: true)
                 lines.append("\(index + 1). " + text.replacingOccurrences(of: "\n", with: "\n   "))
             } catch {

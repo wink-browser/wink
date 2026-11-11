@@ -288,6 +288,12 @@ final class CDPSession {
     /// Mouse moves are delivered with the next frame; while the display sleeps
     /// there are no frames, so don't wait long for one.
     private func moveMouse(x: Double, y: Double) async throws {
+        // A private headless instance's window is transparent, so it may get
+        // no frames to deliver a move with; nobody sees hover effects there.
+        if DebugDriver.isAgentHeadless { return }
+        // Same for a window hidden behind others: macOS gives it no frames.
+        if let tab, let window = AppDelegate.shared?.window(containing: tab)?.window,
+           !window.occlusionState.contains(.visible) { return }
         do {
             _ = try await send("Input.dispatchMouseEvent", ["type": "mouseMoved", "x": x, "y": y], timeout: 0.3)
         } catch let error as CDPError where error.message.contains("timed out") {
