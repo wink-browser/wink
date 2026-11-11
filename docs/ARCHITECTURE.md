@@ -7,7 +7,7 @@
 │  │ Windows,   │ │ Command bar, │ │ Agent panel   │ │ AgentHub: consent, tab     │  │
 │  │ tabs,      │ │ sidebar,     │ │ Claude API /  │ │ access, activity, Stop     │  │
 │  │ session    │ │ overlays     │ │ Claude Code   │ ├────────────────────────────┤  │
-│  └─────┬──────┘ └──────────────┘ └──────┬────────┘ │ BrowserTools (22 tools)    │  │
+│  └─────┬──────┘ └──────────────┘ └──────┬────────┘ │ BrowserTools (37 tools)    │  │
 │        │                                │          │ CDPSession → isolated world│  │
 │        │                                │          ├────────────────────────────┤  │
 │        │                                │          │ MCP server (unix socket)   │◄─┼── wink-mcp ◄── Claude Code,
@@ -47,7 +47,7 @@ CEF browsers embedded in a native view use CEF's lightweight *Alloy* runtime sty
 | `Bridge/` | `wink-mcp`: stdio ⇄ unix-socket relay for MCP clients; answers the handshake while Wink is closed, opens Wink on the first tool call, reconnects after a restart |
 | `Resources/` | Info.plists, app icon and the cut-out eye (both built from `Brand/wink-eye.jpg` by `make icon`), blocklist (+ NOTICE) |
 | `scripts/` | `bootstrap.sh`, `bundle.sh` (assemble + sign), `release.sh` (Developer ID + notarization + DMG), `update_blocklist.py`, `make_icon.swift` |
-| `Tests/` | C++ unit tests for the content blocker |
+| `Tests/` | C++ unit tests for the content blocker; `agent_e2e.py`, the end-to-end agent suite CI runs against a headless Wink |
 
 ## Key flows
 
