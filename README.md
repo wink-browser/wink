@@ -90,6 +90,14 @@ To stop Wink adding itself, turn it off in **Settings › Agents** or run `claud
 
 </details>
 
+## With flock
+
+<p align="center">
+  <a href="https://theflock.sh"><img src="docs/images/flock.png" width="96" alt="flock"></a>
+</p>
+
+[flock](https://theflock.sh) runs a room of coding agents side by side: flock is where agents work, Wink is where they check it. Every Claude Code agent in flock can use Wink with no setup, and each one shows up under its own name and project ("Nova · storefront") with its own tabs, so **Close All** closes just that agent's. flock shows the page each agent has open in Wink on its thread.
+
 ## Wink vs Playwright
 
 Same agent, same prompts, both browsers headless and private. Claude Sonnet 5.5 ran eleven browser tasks three times in each. Wink 0.8.1 was against Playwright MCP 0.0.85, with Playwright's network, storage, PDF and DevTools options turned on.
