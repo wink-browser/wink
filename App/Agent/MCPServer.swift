@@ -232,7 +232,11 @@ final class MCPSessionController {
         let token = helloInfo["token"] as? String ?? ""
         let trusted = !token.isEmpty && token == AgentHub.shared.internalToken
         // Claude Code launched from Wink's panel is Winky's engine: show it as Winky.
-        let session = AgentSession(name: trusted ? Winky.name : Self.displayName(for: clientName), origin: .mcp, trusted: trusted)
+        let client = trusted ? Winky.name : Self.displayName(for: clientName)
+        let host = (helloInfo["host"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
+        let session = AgentSession(name: Self.label(client: client, host: host), client: client, origin: .mcp, trusted: trusted)
+        session.host = host
+        if session.name != client { NSLog("[wink] session %@ is %@ in %@", session.name, client, host["app"] ?? "?") }
         session.clientVersion = version
         session.parentProcess = helloInfo["parent"] as? String ?? ""
         AgentHub.shared.register(session)
@@ -250,6 +254,14 @@ final class MCPSessionController {
         }
         inflight.removeAll()
         inflightIDs.removeAll()
+    }
+
+    /// A session named after its agent when the app it runs in says which one
+    /// ("Nova · storefront"), else after its client.
+    static func label(client: String, host: [String: String]) -> String {
+        guard let agent = host["agent"], !agent.isEmpty else { return client }
+        if let repo = host["repo"], !repo.isEmpty { return "\(agent) · \(repo)" }
+        return agent
     }
 
     static func displayName(for client: String) -> String {

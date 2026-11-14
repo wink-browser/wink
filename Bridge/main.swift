@@ -149,6 +149,26 @@ func launchHeadless() {
     if posix_spawn(&pid, executable, &actions, nil, &cArgs, &cEnv) == 0 { headlessPID = pid }
 }
 
+
+/// The app this agent runs inside, when that app says so, so Wink can name the
+/// session after the agent rather than its client ("Nova · storefront" instead
+/// of a row of identical "Claude Code"s). flock exports these to every agent it
+/// starts. They are labels only: an agent controls its own environment, so
+/// nothing here grants anything.
+func hostInfo() -> [String: String]? {
+    func env(_ name: String) -> String? {
+        guard let raw = getenv(name) else { return nil }
+        let value = String(cString: raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : String(value.prefix(80))
+    }
+    guard let pane = env("FLOCK_PANE_ID") else { return nil }
+    var host: [String: String] = ["app": "flock", "pane": pane]
+    if let agent = env("FLOCK_AGENT_NAME") { host["agent"] = agent }
+    if let repo = env("FLOCK_REPO_NAME") { host["repo"] = repo }
+    if let workspace = env("FLOCK_WORKSPACE_ID") { host["workspace"] = workspace }
+    return host
+}
+
 func parentProcessPath() -> String {
     var buffer = [CChar](repeating: 0, count: Int(4 * MAXPATHLEN))
     let length = proc_pidpath(getppid(), &buffer, UInt32(buffer.count))
@@ -355,7 +375,9 @@ final class Bridge: @unchecked Sendable {
         // Identify ourselves first. The token is set when Wink itself launched
         // the agent (pre-approved); other agents are approved by the user in Wink.
         let token = getenv("WINK_AGENT_TOKEN").map { String(cString: $0) } ?? ""
-        var outgoing = encode(["wink_bridge": 1, "pid": Int(getpid()), "parent": parentProcessPath(), "token": token])
+        var hello: [String: Any] = ["wink_bridge": 1, "pid": Int(getpid()), "parent": parentProcessPath(), "token": token]
+        if let host = hostInfo() { hello["host"] = host }
+        var outgoing = encode(hello)
 
         lock.lock()
         if replay, var initialize = initializeRequest {
