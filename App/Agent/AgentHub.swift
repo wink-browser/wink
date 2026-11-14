@@ -10,7 +10,15 @@ final class AgentSession: Identifiable {
     enum Origin { case mcp, panel }
 
     let id = UUID()
+    /// What Wink shows for the session: the client ("Claude Code"), or the
+    /// agent its host app named ("Nova · storefront").
     var name: String
+    /// The client itself, which consent is remembered for: "Allow Always" for
+    /// Claude Code covers every Claude Code session, however each is labelled.
+    var client: String
+    /// The app the agent runs inside, as it described itself (see the bridge's
+    /// hostInfo): app, pane, agent, repo, workspace. Labels, never trust.
+    var host: [String: String] = [:]
     let origin: Origin
     var clientVersion = ""
     var parentProcess = ""
@@ -33,8 +41,9 @@ final class AgentSession: Identifiable {
     @ObservationIgnored var extraAllowance: [String: Int] = [:]
     @ObservationIgnored var isolatedProfile: WinkProfile?
 
-    init(name: String, origin: Origin, trusted: Bool) {
+    init(name: String, client: String? = nil, origin: Origin, trusted: Bool) {
         self.name = name
+        self.client = client ?? name
         self.origin = origin
         self.trusted = trusted
         self.approved = trusted
@@ -164,7 +173,7 @@ final class AgentHub {
             throw AgentAccessError(message: "The user stopped this agent. Wait for them to resume, or ask them to.")
         }
         if session.approved || session.trusted { return }
-        if WinkSettings.shared.trustedAgentClients.contains(session.name) {
+        if WinkSettings.shared.trustedAgentClients.contains(session.client) {
             session.approved = true
             return
         }
@@ -180,7 +189,14 @@ final class AgentHub {
     }
 
     private func askConnection(_ session: AgentSession) async -> Bool {
-        let detail = session.parentProcess.isEmpty ? "" : " (\(URL(fileURLWithPath: session.parentProcess).lastPathComponent))"
+        let detail: String
+        if session.name != session.client {
+            // A labelled session: say what it is underneath ("Claude Code in flock").
+            let app = session.host["app"].map { " in \($0)" } ?? ""
+            detail = " (\(session.client)\(app))"
+        } else {
+            detail = session.parentProcess.isEmpty ? "" : " (\(URL(fileURLWithPath: session.parentProcess).lastPathComponent))"
+        }
         let choice = await prompt(
             symbol: "sparkles",
             title: "\(session.name)\(detail) wants to use Wink",
@@ -190,8 +206,8 @@ final class AgentHub {
         case 2: session.approved = true; return true
         case 1:
             session.approved = true
-            if !WinkSettings.shared.trustedAgentClients.contains(session.name) {
-                WinkSettings.shared.trustedAgentClients.append(session.name)
+            if !WinkSettings.shared.trustedAgentClients.contains(session.client) {
+                WinkSettings.shared.trustedAgentClients.append(session.client)
             }
             return true
         default: return false
