@@ -142,6 +142,10 @@ NS_SWIFT_UI_ACTOR
     performContextAction:(WinkContextAction)action
                     info:(WinkContextMenuInfo *)info;
 - (void)webView:(WinkWebView *)webView mediaAccessChangedVideo:(BOOL)video audio:(BOOL)audio;
+/// The page started making sound (Chromium's own measure: any media, Web
+/// Audio, any frame). There is no matching "stopped": Chromium only says when
+/// sound starts again after a silence.
+- (void)webViewDidStartPlayingAudio:(WinkWebView *)webView;
 - (void)webViewDidReceiveFocus:(WinkWebView *)webView;
 /// While `agentHandlesDialogs`: a JavaScript dialog ("alert", "confirm",
 /// "prompt", "beforeunload") is waiting for -answerJavaScriptDialog:text:.

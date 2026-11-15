@@ -226,7 +226,7 @@ final class TabSleeper {
         let cutoff = Date().addingTimeInterval(-Double(minutes) * 60)
         for window in windowsProvider?() ?? [] {
             for tab in window.tabs where tab.id != window.activeTabID && !tab.isAsleep {
-                guard tab.lastActive < cutoff, !tab.isCapturingMedia, !tab.agentActive,
+                guard tab.lastActive < cutoff, !tab.isCapturingMedia, !tab.isPlayingAudio, !tab.agentActive,
                       tab.agentOwnerID == nil, !tab.isLoading else { continue }
                 Task { @MainActor in
                     // Keep tabs that are audibly playing media awake.

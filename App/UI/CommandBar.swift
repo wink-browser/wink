@@ -37,6 +37,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
     var isVisible: Bool { panel?.isVisible == true }
 
     func show(for controller: BrowserWindowController, mode: Mode) {
+        controller.addressEditor.end(focusPage: false)
         target = controller
         self.mode = mode
         let panel = self.panel ?? makePanel()
@@ -152,75 +153,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
     }
 
     private func buildSuggestions(for raw: String) -> [CommandSuggestion] {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let engine = WinkSettings.shared.searchEngine
-        var result: [CommandSuggestion] = []
-        var seen = Set<String>()
-
-        func add(_ suggestion: CommandSuggestion) {
-            guard !seen.contains(suggestion.value) else { return }
-            seen.insert(suggestion.value)
-            result.append(suggestion)
-        }
-
-        let allTabs = AppDelegate.shared?.allTabs ?? []
-        if text.isEmpty {
-            for tab in allTabs.sorted(by: { $0.lastActive > $1.lastActive }).prefix(5) where tab.id != target?.state.activeTabID {
-                add(.init(kind: .tab, title: tab.displayTitle, subtitle: URLInput.display(tab.url),
-                          value: "tab:\(tab.id)", hint: "Switch to Tab", tab: tab))
-            }
-            return result
-        }
-
-        let resolved = URLInput.resolve(text, searchEngine: engine)
-        let isSearch = resolved == engine.searchURL(for: text)
-        let history = (target?.state.isPrivate ?? false) ? [] : HistoryStore.shared.search(text, limit: 8)
-
-        // Autocomplete: a visited site whose host or domain starts with what
-        // you typed wins ("wiki" → en.wikipedia.org).
-        let typed = text.lowercased()
-        if !text.contains(" "), let top = history.first,
-           Site.host(of: top.url).replacingOccurrences(of: "www.", with: "").hasPrefix(typed)
-            || Site.registrableDomain(Site.host(of: top.url)).hasPrefix(typed) {
-            if let open = allTabs.first(where: { $0.url == top.url }) {
-                add(.init(kind: .tab, title: open.displayTitle, subtitle: URLInput.display(open.url),
-                          value: "tab:\(open.id)", hint: "Switch to Tab", tab: open))
-                seen.insert(open.url)
-            } else {
-                add(.init(kind: .history, title: top.title.isEmpty ? URLInput.display(top.url) : top.title,
-                          subtitle: URLInput.display(top.url), value: top.url, hint: "Open"))
-            }
-        }
-        if isSearch {
-            add(.init(kind: .search, title: text, subtitle: "Search \(engine.displayName)", value: resolved, hint: "Search"))
-        } else {
-            add(.init(kind: .url, title: URLInput.display(resolved), subtitle: resolved, value: resolved, hint: "Open"))
-        }
-        let lower = text.lowercased()
-        for tab in allTabs where tab.title.lowercased().contains(lower) || tab.url.lowercased().contains(lower) {
-            if result.count >= 5 { break }
-            if seen.contains(tab.url) { continue }
-            add(.init(kind: .tab, title: tab.displayTitle, subtitle: URLInput.display(tab.url),
-                      value: "tab:\(tab.id)", hint: "Switch to Tab", tab: tab))
-            seen.insert(tab.url)  // don't repeat an open tab as a history row
-        }
-        // Bookmarks (brought over from another browser) come before history.
-        for bookmark in HistoryStore.shared.searchBookmarks(text, limit: 3) {
-            if result.count >= maxRows - 3 { break }
-            add(.init(kind: .bookmark, title: bookmark.title.isEmpty ? URLInput.display(bookmark.url) : bookmark.title,
-                      subtitle: URLInput.display(bookmark.url), value: bookmark.url, hint: "Open"))
-        }
-        for entry in history {
-            if result.count >= maxRows - 2 { break }
-            add(.init(kind: .history, title: entry.title.isEmpty ? URLInput.display(entry.url) : entry.title,
-                      subtitle: URLInput.display(entry.url), value: entry.url, hint: "Open"))
-        }
-        if !isSearch {
-            add(.init(kind: .search, title: text, subtitle: "Search \(engine.displayName)",
-                      value: engine.searchURL(for: text), hint: "Search"))
-        }
-        add(.init(kind: .ask, title: text, subtitle: "Ask Winky", value: "ask:\(text)", hint: "⌘↩"))
-        return result
+        Suggestions.build(for: raw, state: target?.state, maxRows: maxRows, autocomplete: .firstMatch).rows
     }
 
     private func rebuildRows() {
@@ -228,6 +161,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
         rowViews = suggestions.prefix(maxRows).enumerated().map { index, suggestion in
             let row = SuggestionRowView(suggestion: suggestion)
             row.onClick = { [weak self] in self?.execute(index) }
+            row.onHover = { [weak self] in self?.select(index) }
             row.isSelected = index == selectedIndex
             return row
         }
@@ -261,14 +195,7 @@ final class CommandBarController: NSObject, NSTextFieldDelegate, NSWindowDelegat
         }
         let suggestion = suggestions[index]
         hide()
-        switch suggestion.kind {
-        case .tab:
-            if let tab = suggestion.tab { AppDelegate.shared?.reveal(tab) }
-        case .ask:
-            target.askWinky(suggestion.title)
-        case .url, .search, .history, .bookmark:
-            target.open(suggestion.value, inNewTab: newTab)
-        }
+        Suggestions.perform(suggestion, on: target, inNewTab: newTab)
     }
 
     // MARK: - NSTextFieldDelegate
@@ -321,6 +248,8 @@ final class CommandBarPanel: NSPanel {
 
 final class SuggestionRowView: NSView {
     var onClick: (() -> Void)?
+    /// The pointer moved onto the row (it selects, as in a menu).
+    var onHover: (() -> Void)?
     var isSelected = false { didSet { needsDisplay = true; updateColors() } }
 
     private let icon = NSImageView()
@@ -349,7 +278,8 @@ final class SuggestionRowView: NSView {
             icon.image = eye
         } else if suggestion.kind == .tab, let favicon = suggestion.tab?.favicon {
             icon.image = favicon
-        } else if suggestion.kind == .history || suggestion.kind == .bookmark, let favicon = FaviconCache.shared.image(for: Site.host(of: suggestion.value)) {
+        } else if [.history, .bookmark, .url].contains(suggestion.kind),
+                  let favicon = FaviconCache.shared.image(for: Site.host(of: suggestion.value)) {
             icon.image = favicon
         } else {
             icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
@@ -395,5 +325,19 @@ final class SuggestionRowView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onClick?()
+    }
+
+    // The address bar's suggestions sit in a window that never becomes key.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHover?()
     }
 }

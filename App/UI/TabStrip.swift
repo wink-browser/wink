@@ -23,7 +23,7 @@ final class TopBarView: NSView {
 
     init(controller: BrowserWindowController) {
         self.controller = controller
-        address = NSHostingView(rootView: AddressPill(state: controller.state, controller: controller))
+        address = NSHostingView(rootView: AddressPill(state: controller.state, controller: controller, placement: .top))
         tools = NSHostingView(rootView: TopBarTools(state: controller.state, controller: controller))
         super.init(frame: .zero)
         let drag = WindowDragView()
@@ -257,6 +257,9 @@ struct StripTab: View {
             if compact {
                 Spacer(minLength: 0)
                 FaviconView(tab: tab)
+                    .overlay(alignment: .bottomTrailing) {
+                        TabAudioButton(tab: tab, style: .badge).offset(x: 7, y: 6)
+                    }
                 Spacer(minLength: 0)
             } else {
                 FaviconView(tab: tab)
@@ -266,6 +269,7 @@ struct StripTab: View {
                     .lineLimit(1)
                 Spacer(minLength: 2)
                 if width >= 150 { TabBadges(tab: tab) }
+                TabAudioButton(tab: tab)
                 if hovering { TabCloseButton(tab: tab, controller: controller) }
             }
         }
@@ -291,6 +295,9 @@ struct StripPinnedTab: View {
 
     var body: some View {
         FaviconView(tab: tab)
+            .overlay(alignment: .bottomTrailing) {
+                TabAudioButton(tab: tab, style: .badge).offset(x: 7, y: 6)
+            }
             .frame(width: TabStripLayout.pinnedWidth, height: TabStripLayout.tabHeight)
             .background(RoundedRectangle(cornerRadius: Theme.rowRadius, style: .continuous)
                 .fill(isActive ? Theme.rowSelected : Color.primary.opacity(hovering ? 0.07 : 0.04)))

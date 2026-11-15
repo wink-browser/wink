@@ -155,7 +155,7 @@ Web developers get a workbench on `localhost`: requests in full with headers and
 
 <table>
   <tr><td><kbd>⌘T</kbd></td><td>Command bar: open, search, switch tab, or ask Wink (<kbd>⌘↩</kbd>)</td></tr>
-  <tr><td><kbd>⌘L</kbd></td><td>Edit the current address</td></tr>
+  <tr><td><kbd>⌘L</kbd></td><td>Edit the address in place, with suggestions as you type</td></tr>
   <tr><td><kbd>⌘J</kbd></td><td>Ask Winky, in a prompt bar over the page</td></tr>
   <tr><td><kbd>⌥⌘J</kbd></td><td>Winky's sidebar, for longer conversations</td></tr>
   <tr><td><kbd>⌘S</kbd></td><td>Toggle the sidebar (hover the left edge to peek)</td></tr>

@@ -211,6 +211,14 @@ final class DebugDriver {
             }
         case "hide-commandbar": CommandBarController.shared.hide()
         case "query": CommandBarController.shared.debugSetQuery(argument)
+        case "address": window?.focusAddressBar()
+        case "address-type": window?.addressEditor.debugType(argument)
+        case "address-key": window?.addressEditor.debugKey(argument)
+        case "mute": if let tab = window?.state.activeTab { tab.isAudioMuted = argument != "off" }
+        case "gesture":  // runs page script as if the user clicked (media may then play)
+            if let tab = window?.state.activeTab {
+                Task { _ = try? await tab.cdp.send("Runtime.evaluate", ["expression": argument, "userGesture": true]) }
+            }
         case "sidebar": window?.toggleSidebar()
         case "tabs": WinkSettings.shared.tabPlacement = TabPlacement(rawValue: argument) ?? .left
         case "pin": if let window, let tab = window.state.activeTab { window.togglePin(tab) }
@@ -320,6 +328,10 @@ final class DebugDriver {
                 lines.append("browser window: tabs=\(s.tabs.count) active=\(s.activeTab?.displayTitle ?? "-") sidebar=\(s.sidebarVisible) fullscreen=\(s.contentFullscreen) prompts=\(s.prompts.map(\.title))")
                 for tab in s.tabs {
                     lines.append("  tab \(AgentHub.shortID(tab)) asleep=\(tab.isAsleep) loading=\(tab.isLoading) owner=\(tab.agentOwnerName ?? "-") view=\(tab.webView.map { "\(NSStringFromRect($0.frame)) hidden=\($0.isHidden) super=\($0.superview != nil)" } ?? "nil") \(tab.url)")
+                }
+                lines.append("  \(controller.addressEditor.debugSummary)")
+                if let tab = s.activeTab {
+                    lines.append("  sound playing=\(tab.isPlayingAudio) muted=\(tab.isAudioMuted)")
                 }
                 lines.append("  root=\(NSStringFromRect(controller.root.frame)) content=\(NSStringFromRect(controller.root.content.frame)) tabs=\(WinkSettings.shared.tabPlacement.rawValue)")
                 if let close = controller.window?.standardWindowButton(.closeButton) {

@@ -57,6 +57,8 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     var isAudioMuted = false {
         didSet { webView?.isAudioMuted = isAudioMuted }
     }
+    /// The page is making sound (or was, moments ago). Shown as the speaker on the tab.
+    private(set) var isPlayingAudio = false
     var findMatches = 0
     var findActiveMatch = 0
     var loadFailure: LoadFailure?
@@ -92,6 +94,8 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     @ObservationIgnored private var loadWaiters: [(Bool) -> Void] = []
     @ObservationIgnored private var browserWaiters: [() -> Void] = []
     @ObservationIgnored private var _cdp: CDPSession?
+    @ObservationIgnored private var lastAudioStart: Date?
+    @ObservationIgnored private var audioWatch: Task<Void, Never>?
     /// Dialogs, network details and recorded steps while agents use this tab.
     @ObservationIgnored lazy var instruments = AgentInstruments(tab: self)
 
@@ -152,6 +156,7 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
         self.webView = nil
         isAsleep = true
         isLoading = false
+        stopAudio()
         _cdp?.reset()
         webView.delegate = nil
         webView.closeBrowserForce(true)
@@ -185,6 +190,56 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
             webView?.reload()
         }
     }
+
+    // MARK: - Sound
+
+    /// Chromium heard this page start making sound. It never says when the
+    /// sound stops, so a watch asks the page every two seconds whether a
+    /// <video> or <audio> is still playing aloud. Sound the page's own elements
+    /// don't explain (Web Audio, a player in another site's frame) keeps the
+    /// speaker until Chromium has said nothing new for 20 seconds.
+    func webViewDidStartPlayingAudio(_ webView: WinkWebView) {
+        lastAudioStart = Date()
+        if !isPlayingAudio { isPlayingAudio = true }
+        guard audioWatch == nil else { return }
+        audioWatch = Task { @MainActor [weak self] in
+            var heardPlayer = false
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                guard self.webView != nil, !self.isClosing else { self.stopAudio(); return }
+                let playing = (try? await self.cdp.evaluateAgent(Self.audioProbe, timeout: 5)) as? Bool
+                if Task.isCancelled { return }
+                if playing == true { heardPlayer = true; continue }
+                let quiet = Date().timeIntervalSince(self.lastAudioStart ?? .distantPast)
+                if heardPlayer || quiet > 20 { self.stopAudio(); return }
+            }
+        }
+    }
+
+    private func stopAudio() {
+        audioWatch?.cancel()
+        audioWatch = nil
+        if isPlayingAudio { isPlayingAudio = false }
+    }
+
+    /// Whether a <video> or <audio> on the page (or a same-site frame) is playing aloud.
+    private static let audioProbe = """
+    (() => {
+      const aloud = (m) => !m.paused && !m.ended && !m.muted && m.volume > 0;
+      const scan = (doc, depth) => {
+        for (const m of doc.querySelectorAll('video,audio')) if (aloud(m)) return true;
+        if (depth >= 3) return false;
+        for (const f of doc.querySelectorAll('iframe,frame')) {
+          let inner = null;
+          try { inner = f.contentDocument; } catch (e) {}
+          if (inner && scan(inner, depth + 1)) return true;
+        }
+        return false;
+      };
+      return scan(document, 0);
+    })()
+    """
 
     // MARK: - Waiting (used by agent tools)
 
@@ -252,6 +307,7 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     }
 
     func webViewDidStartMainFrameLoad(_ webView: WinkWebView) {
+        stopAudio()  // a new page starts silent
         loadFailure = nil
         hasCrashed = false
         blockedCount = 0
@@ -298,6 +354,7 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     func webViewWillClose(_ webView: WinkWebView) {
         guard webView === self.webView, !sleeping else { return }
         isClosing = true
+        stopAudio()
         host?.tabWillClose(self)
     }
 
@@ -309,6 +366,7 @@ final class Tab: NSObject, Identifiable, WinkWebViewDelegate {
     func webView(_ webView: WinkWebView, renderProcessDidTerminateWithStatus status: Int) {
         hasCrashed = true
         isLoading = false
+        stopAudio()
     }
 
     func webView(_ webView: WinkWebView, didFindMatches count: Int, activeMatch: Int, finalUpdate: Bool) {

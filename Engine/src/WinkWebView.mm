@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 #include "content_blocker.h"
+#include "include/cef_audio_handler.h"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_context_menu_handler.h"
@@ -382,6 +383,7 @@ class ImageCallback : public CefDownloadImageCallback {
 // the browser process UI thread (= macOS main thread).
 // ---------------------------------------------------------------------------
 class WinkClient : public CefClient,
+                   public CefAudioHandler,
                    public CefLifeSpanHandler,
                    public CefDisplayHandler,
                    public CefLoadHandler,
@@ -410,6 +412,27 @@ class WinkClient : public CefClient,
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
+  CefRefPtr<CefAudioHandler> GetAudioHandler() override { return this; }
+
+  // --- CefAudioHandler ------------------------------------------------------
+  // Only to hear that a page started making sound: Chromium asks for capture
+  // parameters each time a page turns audible. Capturing would mute the page
+  // (CEF opens its loopback stream with mute_source), so Wink always declines,
+  // and the stream callbacks below never run.
+
+  bool GetAudioParameters(CefRefPtr<CefBrowser> browser, CefAudioParameters& params) override {
+    WinkWebView* view = view_;
+    if ([view.delegate respondsToSelector:@selector(webViewDidStartPlayingAudio:)]) {
+      [view.delegate webViewDidStartPlayingAudio:view];
+    }
+    return false;
+  }
+  void OnAudioStreamStarted(CefRefPtr<CefBrowser> browser, const CefAudioParameters& params,
+                            int channels) override {}
+  void OnAudioStreamPacket(CefRefPtr<CefBrowser> browser, const float** data, int frames,
+                           int64_t pts) override {}
+  void OnAudioStreamStopped(CefRefPtr<CefBrowser> browser) override {}
+  void OnAudioStreamError(CefRefPtr<CefBrowser> browser, const CefString& message) override {}
 
   // --- CefLifeSpanHandler ---------------------------------------------------
 

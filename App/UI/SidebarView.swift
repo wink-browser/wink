@@ -10,7 +10,7 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AddressPill(state: state, controller: controller)
+            AddressPill(state: state, controller: controller, placement: .left)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
 
@@ -46,49 +46,7 @@ struct SidebarView: View {
     }
 }
 
-// MARK: - Address pill
-
-struct AddressPill: View {
-    let state: BrowserWindowState
-    let controller: BrowserWindowController
-    @State private var hovering = false
-
-    var body: some View {
-        let tab = state.activeTab
-        HStack(spacing: 6) {
-            if state.isPrivate {
-                Text("Private")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.purple)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.purple.opacity(0.15)))
-                    .help("Private window: nothing is saved, and agents can't see these tabs")
-            }
-            if let tab, tab.url.hasPrefix("http://"), !ContentBlockerService.isLocal(tab.url) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10)).foregroundStyle(.orange)
-                    .help("Not secure: this page is not using HTTPS")
-            }
-            Text(tab.map { URLInput.display($0.url) }.flatMap { $0.isEmpty ? nil : $0 } ?? "Search or enter address")
-                .font(.system(size: 12.5))
-                .foregroundStyle(tab == nil ? .tertiary : .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
-            if let tab, tab.url.hasPrefix("http") {
-                ShieldButton(tab: tab, state: state)
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(Color.primary.opacity(hovering ? 0.09 : 0.06)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { CommandBarController.shared.show(for: controller, mode: .navigate) }
-        .help("Search or enter address (⌘L)")
-    }
-}
+// MARK: - Privacy shield (in the address pill)
 
 struct ShieldButton: View {
     let tab: Tab
@@ -197,6 +155,7 @@ struct TabRow: View {
                 .lineLimit(1)
             Spacer(minLength: 2)
             TabBadges(tab: tab)
+            TabAudioButton(tab: tab)
             if hovering { TabCloseButton(tab: tab, controller: controller) }
         }
         .padding(.horizontal, 8)
@@ -213,7 +172,7 @@ struct TabRow: View {
     }
 }
 
-/// What a tab is up to: an agent at work, shared, recording, muted.
+/// What a tab is up to: an agent at work, shared, recording. Sound has its own button.
 struct TabBadges: View {
     let tab: Tab
 
@@ -229,8 +188,46 @@ struct TabBadges: View {
         if tab.isCapturingMedia {
             Image(systemName: "record.circle").font(.system(size: 10)).foregroundStyle(.red)
         }
-        if tab.isAudioMuted {
-            Image(systemName: "speaker.slash.fill").font(.system(size: 9)).foregroundStyle(.secondary)
+    }
+}
+
+/// The speaker on a tab that is making sound, or is muted. Click to mute or unmute.
+struct TabAudioButton: View {
+    enum Style {
+        /// In a row, beside the title.
+        case inline
+        /// A small disc on the corner of an icon-only tab.
+        case badge
+    }
+
+    let tab: Tab
+    var style: Style = .inline
+    @State private var hovering = false
+
+    var body: some View {
+        if tab.isPlayingAudio || tab.isAudioMuted {
+            let muted = tab.isAudioMuted
+            let badge = style == .badge
+            Button { tab.isAudioMuted.toggle() } label: {
+                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: badge ? 7.5 : 10, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+                    .foregroundStyle(muted ? Color.secondary : Color.primary.opacity(0.75))
+                    .frame(width: badge ? 15 : 18, height: badge ? 15 : 18)
+                    .background {
+                        if badge {
+                            Circle().fill(Color(nsColor: .windowBackgroundColor))
+                                .overlay(Circle().strokeBorder(Theme.hairline))
+                        } else {
+                            Circle().fill(Color.primary.opacity(hovering ? 0.1 : 0))
+                        }
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(muted ? "Unmute Tab" : "Mute Tab")
+            .accessibilityLabel(muted ? "Unmute tab" : "Mute tab")
         }
     }
 }
@@ -343,6 +340,9 @@ struct PinnedTile: View {
     var body: some View {
         FaviconView(tab: tab)
             .scaleEffect(1.1)
+            .overlay(alignment: .bottomTrailing) {
+                TabAudioButton(tab: tab, style: .badge).offset(x: 8, y: 7)
+            }
             .frame(maxWidth: .infinity)
             .frame(height: 42)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous)

@@ -210,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newPrivateWindowAction(_ sender: Any?) { newWindow(isPrivate: true) }
     @objc func openLocationAction(_ sender: Any?) {
         guard let window = activeWindow else { newWindow(isPrivate: false); return }
-        CommandBarController.shared.show(for: window, mode: .navigate)
+        window.focusAddressBar()
     }
     @objc func closeTabAction(_ sender: Any?) {
         if NSApp.keyWindow === settingsWindow { settingsWindow?.close(); return }

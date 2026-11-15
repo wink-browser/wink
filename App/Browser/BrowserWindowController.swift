@@ -18,6 +18,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
     private var grantedPermissions: [String: Bool] = [:]
 
     var activeTab: Tab? { state.activeTab }
+    /// The address bar's editing, in whichever pill is on screen.
+    private(set) lazy var addressEditor = AddressEditor(controller: self)
 
     init(state: BrowserWindowState, frame: NSRect? = nil) {
         self.state = state
@@ -95,6 +97,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         state.activeTabID = tab.id
         tab.lastActive = Date()
         state.findBarVisible = false
+        addressEditor.end(focusPage: false)
         root.content.show(tab)
         window?.title = tab.displayTitle
         if window?.isKeyWindow == true, !CommandBarController.shared.isVisible {
@@ -190,6 +193,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         }
     }
 
+    /// ⌘L: edit the address where it is; when no pill is on screen (sidebar
+    /// hidden, page fullscreen), the command bar asks instead.
+    func focusAddressBar() {
+        let onScreen = WinkSettings.shared.tabPlacement == .top || state.sidebarVisible
+        if onScreen && !state.contentFullscreen {
+            addressEditor.begin()
+        } else {
+            CommandBarController.shared.show(for: self, mode: .navigate)
+        }
+    }
+
     func goBack() { state.activeTab?.webView?.goBack() }
     func goForward() { state.activeTab?.webView?.goForward() }
     func reload() { state.activeTab?.reload() }
@@ -198,6 +212,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
 
     func toggleSidebar() {
         guard WinkSettings.shared.tabPlacement == .left else { return }
+        if state.sidebarVisible { addressEditor.end(focusPage: true) }  // its pill is going away
         state.sidebarVisible.toggle()
         state.sidebarPeeking = false
         WinkSettings.shared.sidebarVisible = state.sidebarVisible
