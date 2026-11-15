@@ -29,7 +29,7 @@ struct EmptyStateView: View {
             VStack(spacing: 8) {
                 shortcut("⌘T", "Open or search")
                 shortcut("⌘J", "Talk to Winky")
-                shortcut("⌘S", "Toggle sidebar")
+                if WinkSettings.shared.tabPlacement == .left { shortcut("⌘S", "Toggle sidebar") }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

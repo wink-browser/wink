@@ -54,6 +54,7 @@ enum MainMenu {
         ]))
         main.addItem(submenu("View", [
             item("Toggle Sidebar", #selector(AppDelegate.toggleSidebarAction(_:)), "s"),
+            item("Tabs on Top", #selector(AppDelegate.toggleTabPlacementAction(_:))),
             item("Winky Sidebar", #selector(AppDelegate.toggleAgentPanelAction(_:)), "j", [.command, .option]),
             .separator(),
             item("Reload Page", #selector(AppDelegate.reloadAction(_:)), "r"),

@@ -196,30 +196,8 @@ struct TabRow: View {
                 .foregroundStyle(tab.isAsleep && !isActive ? .secondary : .primary)
                 .lineLimit(1)
             Spacer(minLength: 2)
-            if tab.agentActive || tab.agentOwnerID != nil {
-                EyeMark(width: 17, blinking: tab.agentActive)
-                    .help(tab.agentActive ? "An agent is working here" : "Opened by an agent")
-            }
-            if tab.sharedWithAgents {
-                Image(systemName: "person.2.wave.2").font(.system(size: 9)).foregroundStyle(.secondary)
-                    .help("Shared with agents")
-            }
-            if tab.isCapturingMedia {
-                Image(systemName: "record.circle").font(.system(size: 10)).foregroundStyle(.red)
-            }
-            if tab.isAudioMuted {
-                Image(systemName: "speaker.slash.fill").font(.system(size: 9)).foregroundStyle(.secondary)
-            }
-            if hovering {
-                Button { controller.closeTab(tab) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                        .frame(width: 18, height: 18)
-                        .background(Circle().fill(Color.primary.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Close Tab (⌘W)")
-            }
+            TabBadges(tab: tab)
+            if hovering { TabCloseButton(tab: tab, controller: controller) }
         }
         .padding(.horizontal, 8)
         .frame(height: Theme.rowHeight)
@@ -232,6 +210,44 @@ struct TabRow: View {
         .onTapGesture { controller.select(tab) }
         .contextMenu { TabContextMenu(tab: tab, controller: controller) }
         .help(tab.url)
+    }
+}
+
+/// What a tab is up to: an agent at work, shared, recording, muted.
+struct TabBadges: View {
+    let tab: Tab
+
+    var body: some View {
+        if tab.agentActive || tab.agentOwnerID != nil {
+            EyeMark(width: 17, blinking: tab.agentActive)
+                .help(tab.agentActive ? "An agent is working here" : "Opened by an agent")
+        }
+        if tab.sharedWithAgents {
+            Image(systemName: "person.2.wave.2").font(.system(size: 9)).foregroundStyle(.secondary)
+                .help("Shared with agents")
+        }
+        if tab.isCapturingMedia {
+            Image(systemName: "record.circle").font(.system(size: 10)).foregroundStyle(.red)
+        }
+        if tab.isAudioMuted {
+            Image(systemName: "speaker.slash.fill").font(.system(size: 9)).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct TabCloseButton: View {
+    let tab: Tab
+    let controller: BrowserWindowController
+
+    var body: some View {
+        Button { controller.closeTab(tab) } label: {
+            Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.primary.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Close Tab (⌘W)")
     }
 }
 
@@ -346,22 +362,34 @@ struct AgentTabsSection: View {
     let controller: BrowserWindowController
 
     var body: some View {
-        let groups = Dictionary(grouping: state.agentTabs) { $0.agentOwnerName ?? "Agent" }
-        ForEach(groups.keys.sorted(), id: \.self) { owner in
+        ForEach(AgentTabGroup.groups(state.agentTabs)) { group in
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     EyeMark(width: 16)
-                    Text(owner.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(group.owner.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Close All") { groups[owner]?.forEach { controller.closeTab($0) } }
+                    Button("Close All") { group.tabs.forEach { controller.closeTab($0) } }
                         .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 8).padding(.bottom, 2)
-                ForEach(groups[owner] ?? []) { tab in
+                ForEach(group.tabs) { tab in
                     TabRow(tab: tab, isActive: tab.id == state.activeTabID, controller: controller)
                 }
             }
         }
+    }
+}
+
+/// An agent's tabs, shown together under its name.
+struct AgentTabGroup: Identifiable {
+    let owner: String
+    let tabs: [Tab]
+    var id: String { owner }
+
+    @MainActor
+    static func groups(_ agentTabs: [Tab]) -> [AgentTabGroup] {
+        let byOwner = Dictionary(grouping: agentTabs) { $0.agentOwnerName ?? "Agent" }
+        return byOwner.keys.sorted().map { AgentTabGroup(owner: $0, tabs: byOwner[$0] ?? []) }
     }
 }
 
@@ -370,29 +398,52 @@ struct AgentTabsSection: View {
 struct SidebarFooter: View {
     let state: BrowserWindowState
     let controller: BrowserWindowController
-    @State private var showDownloads = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            AgentsButton(state: state, controller: controller)
+            Spacer()
+            BrowserToolButtons()
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+    }
+}
+
+/// Which agents are connected; opens Winky's sidebar.
+struct AgentsButton: View {
+    let state: BrowserWindowState
+    let controller: BrowserWindowController
+    /// The label truncates past this width (the top bar has less room than the sidebar).
+    var maxWidth: CGFloat?
 
     var body: some View {
         let hub = AgentHub.shared
+        Button { controller.toggleAgentPanel() } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(hub.connectedClientNames.isEmpty ? Color.secondary.opacity(0.4) : Color.green)
+                    .frame(width: 6, height: 6)
+                Text(hub.connectedClientNames.isEmpty ? "Agents" : hub.connectedClientNames.joined(separator: ", "))
+                    .font(.system(size: 12)).lineLimit(1)
+            }
+            .padding(.horizontal, 8).frame(height: 26)
+            .frame(maxWidth: maxWidth)
+            .background(RoundedRectangle(cornerRadius: 7).fill(state.agentPanelVisible ? Theme.rowSelected : .clear))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Agents (⌥⌘J)")
+    }
+}
+
+/// Downloads, a ready update, Settings and the profile.
+struct BrowserToolButtons: View {
+    @State private var showDownloads = false
+
+    var body: some View {
         let downloads = DownloadManager.shared
         HStack(spacing: 4) {
-            Button { controller.toggleAgentPanel() } label: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(hub.connectedClientNames.isEmpty ? Color.secondary.opacity(0.4) : Color.green)
-                        .frame(width: 6, height: 6)
-                    Text(hub.connectedClientNames.isEmpty ? "Agents" : hub.connectedClientNames.joined(separator: ", "))
-                        .font(.system(size: 12)).lineLimit(1)
-                }
-                .padding(.horizontal, 8).frame(height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(state.agentPanelVisible ? Theme.rowSelected : .clear))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Agents (⌘J)")
-
-            Spacer()
-
             if !downloads.items.isEmpty {
                 Button { showDownloads.toggle() } label: {
                     Image(systemName: downloads.hasActive ? "arrow.down.circle.dotted" : "arrow.down.circle")
@@ -422,8 +473,6 @@ struct SidebarFooter: View {
                 .buttonStyle(.plain)
                 .help(Profile.shared.name.isEmpty ? "Your profile" : Profile.shared.name)
         }
-        .padding(.horizontal, 12)
-        .frame(height: 38)
     }
 }
 

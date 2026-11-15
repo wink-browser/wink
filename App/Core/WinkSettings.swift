@@ -32,6 +32,16 @@ enum SearchEngine: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where a window's tabs live.
+enum TabPlacement: String, CaseIterable, Identifiable {
+    /// A vertical list in the sidebar, beside the page.
+    case left
+    /// A strip above the page, under the address bar.
+    case top
+
+    var id: String { rawValue }
+}
+
 enum AgentEngineKind: String, CaseIterable, Identifiable {
     /// Wink's built-in agent talking to the Anthropic API with the user's key.
     case claudeAPI
@@ -84,6 +94,7 @@ final class WinkSettings: @unchecked Sendable {
     // General
     var searchEngine: SearchEngine { didSet { save(searchEngine.rawValue, "searchEngine") } }
     var restoreSession: Bool { didSet { save(restoreSession, "restoreSession") } }
+    var tabPlacement: TabPlacement { didSet { save(tabPlacement.rawValue, "tabPlacement") } }
     var sidebarVisible: Bool { didSet { save(sidebarVisible, "sidebarVisible") } }
     var sidebarWidth: Double { didSet { save(sidebarWidth, "sidebarWidth") } }
     var agentPanelWidth: Double { didSet { save(agentPanelWidth, "agentPanelWidth") } }
@@ -136,6 +147,7 @@ final class WinkSettings: @unchecked Sendable {
         let d = UserDefaults.standard
         searchEngine = SearchEngine(rawValue: d.string(forKey: "searchEngine") ?? "") ?? .duckDuckGo
         restoreSession = d.object(forKey: "restoreSession") as? Bool ?? true
+        tabPlacement = TabPlacement(rawValue: d.string(forKey: "tabPlacement") ?? "") ?? .left
         sidebarVisible = d.object(forKey: "sidebarVisible") as? Bool ?? true
         sidebarWidth = d.object(forKey: "sidebarWidth") as? Double ?? 248
         agentPanelWidth = d.object(forKey: "agentPanelWidth") as? Double ?? 380

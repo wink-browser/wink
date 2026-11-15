@@ -197,6 +197,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
     func stopLoading() { state.activeTab?.webView?.stopLoading() }
 
     func toggleSidebar() {
+        guard WinkSettings.shared.tabPlacement == .left else { return }
         state.sidebarVisible.toggle()
         state.sidebarPeeking = false
         WinkSettings.shared.sidebarVisible = state.sidebarVisible
@@ -244,9 +245,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         root.focusAgentComposer()
     }
 
-    /// Traffic lights live in the sidebar; they hide with it (Arc-style).
+    /// Traffic lights live in the sidebar and hide with it (Arc-style); with tabs on top they stay.
     func updateTrafficLights() {
-        let visible = (state.sidebarVisible || state.sidebarPeeking) && !state.contentFullscreen
+        let chrome = WinkSettings.shared.tabPlacement == .top || state.sidebarVisible || state.sidebarPeeking
+        let visible = chrome && !state.contentFullscreen
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             window?.standardWindowButton(type)?.isHidden = !visible
         }

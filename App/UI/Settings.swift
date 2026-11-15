@@ -63,6 +63,10 @@ struct GeneralSettings: View {
                 Text("Your profile stays on this Mac; there is no account. Winky uses your first name when you chat with her.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Picker("Tabs", selection: $settings.tabPlacement) {
+                Text("On the left").tag(TabPlacement.left)
+                Text("On top").tag(TabPlacement.top)
+            }
             Picker("Search engine", selection: $settings.searchEngine) {
                 ForEach(SearchEngine.allCases) { Text($0.displayName).tag($0) }
             }

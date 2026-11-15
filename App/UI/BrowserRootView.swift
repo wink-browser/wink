@@ -44,6 +44,10 @@ final class BrowserRootView: NSView {
     private let sidebarPeekBackground = NSVisualEffectView()
     private let header: SidebarHeaderView
     private let sidebarHost: NSHostingView<SidebarView>
+    /// Tabs on top: the bar with the address, and the strip of tabs under it.
+    private let topBar: TopBarView
+    private let tabStripDrag = WindowDragView()
+    private var tabStripHost: TabStripHostingView<TabStripView>!
     let content: ContentContainerView
     /// The aurora's spill onto the window around the card (behind it).
     let outerGlow = AuroraGlowView(placement: .outer)
@@ -56,11 +60,13 @@ final class BrowserRootView: NSView {
 
     private var state: BrowserWindowState { controller.state }
     private var settings: WinkSettings { WinkSettings.shared }
+    private var tabsOnTop: Bool { settings.tabPlacement == .top }
 
     init(controller: BrowserWindowController) {
         self.controller = controller
         header = SidebarHeaderView(controller: controller)
         sidebarHost = NSHostingView(rootView: SidebarView(state: controller.state, controller: controller))
+        topBar = TopBarView(controller: controller)
         content = ContentContainerView(controller: controller)
         agentHost = NSHostingView(rootView: AgentPanelView(model: AgentPanelModel.shared, window: controller))
         welcomeHost = NSHostingView(rootView: WelcomeOverlay(controller: controller))
@@ -92,6 +98,14 @@ final class BrowserRootView: NSView {
         addSubview(sidebarContainer)  // above content so the peeking sidebar overlays it
         content.outerGlow = outerGlow
 
+        addSubview(topBar)
+        addSubview(tabStripDrag)
+        tabStripHost = TabStripHostingView(rootView: TabStripView(state: controller.state, controller: controller) { [weak self] width in
+            self?.tabStripHost?.interactiveWidth = width
+        })
+        tabStripHost.safeAreaRegions = []
+        addSubview(tabStripHost)
+
         sidebarResizer.onDrag = { [weak self] delta in
             guard let self else { return }
             self.settings.sidebarWidth = min(Theme.sidebarMaxWidth, max(Theme.sidebarMinWidth, self.settings.sidebarWidth + delta))
@@ -113,6 +127,7 @@ final class BrowserRootView: NSView {
             _ = self.state.agentPanelVisible
             _ = self.state.contentFullscreen
             _ = self.state.welcomeVisible
+            _ = self.settings.tabPlacement
         }, onChange: { [weak self] in
             guard let self else { return }
             self.needsLayout = true
@@ -153,6 +168,11 @@ final class BrowserRootView: NSView {
             if animated { view.animator().frame = frame } else { view.frame = frame }
         }
 
+        let onTop = tabsOnTop && !state.contentFullscreen
+        topBar.isHidden = !onTop
+        tabStripDrag.isHidden = !onTop
+        tabStripHost.isHidden = !onTop
+
         if state.contentFullscreen {
             place(content, bounds)
             outerGlow.frame = bounds
@@ -164,6 +184,27 @@ final class BrowserRootView: NSView {
             return
         }
         content.setFullBleed(false)
+
+        agentHost.isHidden = !state.agentPanelVisible
+        place(agentHost, NSRect(x: bounds.width - agentWidth, y: 0, width: agentWidth, height: bounds.height))
+        agentResizer.isHidden = !state.agentPanelVisible
+        agentResizer.frame = NSRect(x: bounds.width - agentWidth - 4, y: 0, width: 8, height: bounds.height)
+
+        if onTop {
+            sidebarContainer.isHidden = true
+            sidebarResizer.isHidden = true
+            let right = state.agentPanelVisible ? bounds.width - agentWidth : bounds.width - inset
+            let barTop = Theme.titlebarHeight
+            let cardTop = barTop + Theme.tabStripHeight
+            place(topBar, NSRect(x: 0, y: 0, width: state.agentPanelVisible ? right : bounds.width, height: barTop))
+            let strip = NSRect(x: inset, y: barTop, width: max(0, right - inset), height: Theme.tabStripHeight)
+            tabStripDrag.frame = strip
+            place(tabStripHost, strip)
+            let card = NSRect(x: inset, y: cardTop, width: max(120, right - inset), height: max(80, bounds.height - cardTop - inset))
+            place(content, card)
+            place(outerGlow, card.insetBy(dx: -outerGlow.spill, dy: -outerGlow.spill))
+            return
+        }
 
         let sidebarShown = state.sidebarVisible
         let peeking = !sidebarShown && state.sidebarPeeking
@@ -190,13 +231,8 @@ final class BrowserRootView: NSView {
         sidebarHost.frame = NSRect(x: 0, y: Theme.titlebarHeight, width: sidebarFrame.width,
                                    height: sidebarFrame.height - Theme.titlebarHeight)
 
-        agentHost.isHidden = !state.agentPanelVisible
-        place(agentHost, NSRect(x: bounds.width - agentWidth, y: 0, width: agentWidth, height: bounds.height))
-
         sidebarResizer.isHidden = !sidebarShown
         sidebarResizer.frame = NSRect(x: sidebarWidth - 4, y: 0, width: 8, height: bounds.height)
-        agentResizer.isHidden = !state.agentPanelVisible
-        agentResizer.frame = NSRect(x: bounds.width - agentWidth - 4, y: 0, width: 8, height: bounds.height)
     }
 
     func focusAgentComposer() {
@@ -215,7 +251,7 @@ final class BrowserRootView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !state.sidebarVisible, !state.contentFullscreen else { return }
+        guard !tabsOnTop, !state.sidebarVisible, !state.contentFullscreen else { return }
         let x = convert(event.locationInWindow, from: nil).x
         if !state.sidebarPeeking && x <= 6 {
             state.sidebarPeeking = true
@@ -265,7 +301,7 @@ final class SidebarHeaderView: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
 
-    private static func button(_ symbol: String, _ tooltip: String) -> NSButton {
+    static func button(_ symbol: String, _ tooltip: String) -> NSButton {
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?.withSymbolConfiguration(config)
         let button = NSButton(image: image ?? NSImage(), target: nil, action: nil)

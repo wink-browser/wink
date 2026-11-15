@@ -13,6 +13,8 @@ enum Theme {
     static let rowHeight: CGFloat = 32
     static let rowRadius: CGFloat = 8
     static let titlebarHeight: CGFloat = 40
+    /// Tabs on top: the row under the address bar.
+    static let tabStripHeight: CGFloat = 38
 
     static let accent = Color.accentColor
 

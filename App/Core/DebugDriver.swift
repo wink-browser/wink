@@ -212,6 +212,8 @@ final class DebugDriver {
         case "hide-commandbar": CommandBarController.shared.hide()
         case "query": CommandBarController.shared.debugSetQuery(argument)
         case "sidebar": window?.toggleSidebar()
+        case "tabs": WinkSettings.shared.tabPlacement = TabPlacement(rawValue: argument) ?? .left
+        case "pin": if let window, let tab = window.state.activeTab { window.togglePin(tab) }
         case "agent": window?.toggleAgentPanel()
         case "find": window?.showFindBar(); window?.state.findQuery = argument
         case "select": window?.selectTab(atSidebarIndex: Int(argument) ?? 0)
@@ -319,7 +321,11 @@ final class DebugDriver {
                 for tab in s.tabs {
                     lines.append("  tab \(AgentHub.shortID(tab)) asleep=\(tab.isAsleep) loading=\(tab.isLoading) owner=\(tab.agentOwnerName ?? "-") view=\(tab.webView.map { "\(NSStringFromRect($0.frame)) hidden=\($0.isHidden) super=\($0.superview != nil)" } ?? "nil") \(tab.url)")
                 }
-                lines.append("  root=\(NSStringFromRect(controller.root.frame)) content=\(NSStringFromRect(controller.root.content.frame))")
+                lines.append("  root=\(NSStringFromRect(controller.root.frame)) content=\(NSStringFromRect(controller.root.content.frame)) tabs=\(WinkSettings.shared.tabPlacement.rawValue)")
+                if let close = controller.window?.standardWindowButton(.closeButton) {
+                    let frame = controller.root.convert(close.convert(close.bounds, to: nil), from: nil)
+                    lines.append("  close button=\(NSStringFromRect(frame)) hidden=\(close.isHidden)")
+                }
             }
             lines.append("blocker rules=\(WinkContentBlocker.ruleCount) cookie_controls_mode=\(WinkProfile.default.preferenceValue(forName: "profile.cookie_controls_mode") ?? "nil") webrtc=\(WinkProfile.default.preferenceValue(forName: "webrtc.ip_handling_policy") ?? "nil")")
             try? lines.joined(separator: "\n").write(to: directory!.appendingPathComponent("state.txt"), atomically: true, encoding: .utf8)

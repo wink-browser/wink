@@ -236,6 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func zoomOutAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.zoomOut() }
     @objc func actualSizeAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.resetZoom() }
     @objc func toggleSidebarAction(_ sender: Any?) { activeWindow?.toggleSidebar() }
+    @objc func toggleTabPlacementAction(_ sender: Any?) {
+        let settings = WinkSettings.shared
+        settings.tabPlacement = settings.tabPlacement == .top ? .left : .top
+    }
     @objc func toggleAgentPanelAction(_ sender: Any?) { activeWindow?.toggleAgentPanel() }
     @objc func toggleWinkyBarAction(_ sender: Any?) { activeWindow?.toggleWinkyBar() }
     @objc func devToolsAction(_ sender: Any?) { activeWindow?.activeTab?.webView?.showDevTools() }
@@ -259,4 +263,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tab.sharedWithAgents.toggle()
     }
     @objc func clearBrowsingDataAction(_ sender: Any?) { PrivacyActions.clearBrowsingData() }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(toggleSidebarAction(_:)):
+            // With tabs on top there is no sidebar to toggle.
+            return WinkSettings.shared.tabPlacement == .left
+        case #selector(toggleTabPlacementAction(_:)):
+            menuItem.state = WinkSettings.shared.tabPlacement == .top ? .on : .off
+            return true
+        default:
+            return true
+        }
+    }
 }
