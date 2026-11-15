@@ -20,6 +20,8 @@ MainActor.assumeIsolated {
     let paths = WinkPaths.shared
     paths.prepare()
     PrivacyActions.performPendingWipe(paths: paths)
+    // Listed before the engine starts, which makes this launch's copy of the app.
+    let staleClones = CodeSignClones.leftovers()
 
     guard WinkRuntime.start(argc: CommandLine.argc,
                             argv: CommandLine.unsafeArgv,
@@ -27,6 +29,7 @@ MainActor.assumeIsolated {
         // Another instance handled the launch (process singleton) or init failed.
         exit(WinkRuntime.exitCode)
     }
+    CodeSignClones.remove(staleClones)
 
     let appDelegate = AppDelegate()
     application.delegate = appDelegate
