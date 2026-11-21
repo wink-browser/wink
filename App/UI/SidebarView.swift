@@ -10,7 +10,8 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AddressPill(state: state, controller: controller, placement: .left)
+            AddressBar(controller: controller, placement: .left)
+                .frame(height: AddressBarView.height)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
 
@@ -46,7 +47,7 @@ struct SidebarView: View {
     }
 }
 
-// MARK: - Privacy shield (in the address pill)
+// MARK: - Privacy shield (in the address bar)
 
 struct ShieldButton: View {
     let tab: Tab

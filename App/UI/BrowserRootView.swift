@@ -40,6 +40,8 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
 final class BrowserRootView: NSView {
     unowned let controller: BrowserWindowController
     private let background = NSVisualEffectView()
+    /// Under every other view at the top of the window (see TitlebarShieldView).
+    private let titlebarShield = TitlebarShieldView()
     private let sidebarContainer = FlippedView()
     private let sidebarPeekBackground = NSVisualEffectView()
     private let header: SidebarHeaderView
@@ -72,12 +74,17 @@ final class BrowserRootView: NSView {
         welcomeHost = NSHostingView(rootView: WelcomeOverlay(controller: controller))
         super.init(frame: .zero)
         welcomeHost.safeAreaRegions = []
+        // Winky's header shares the chrome's first row: its buttons sit on the
+        // traffic lights' line instead of under AppKit's titlebar.
+        agentHost.safeAreaRegions = []
         welcomeHost.isHidden = true
 
         background.material = .sidebar
         background.blendingMode = .behindWindow
         background.state = .followsWindowActiveState
         addSubview(background)
+        titlebarShield.autoresizingMask = [.width]
+        addSubview(titlebarShield)
 
         sidebarPeekBackground.material = .popover
         sidebarPeekBackground.blendingMode = .withinWindow
@@ -147,6 +154,16 @@ final class BrowserRootView: NSView {
         layoutPanes()
     }
 
+    /// A click on the bare window at the top (around the card, where nothing
+    /// else is) drags it, as the titlebar would.
+    override func mouseDown(with event: NSEvent) {
+        if convert(event.locationInWindow, from: nil).y < titlebarStripHeight {
+            WindowDragView.handle(event, in: window)
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+
     func animateLayout() {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
@@ -159,6 +176,14 @@ final class BrowserRootView: NSView {
     private func layoutPanes(animated: Bool = false) {
         let bounds = self.bounds
         background.frame = bounds
+        let shield = NSRect(x: 0, y: 0, width: bounds.width, height: titlebarStripHeight)
+        if titlebarShield.frame != shield {
+            titlebarShield.frame = shield
+            // AppKit works the drag region out again when a control in the
+            // titlebar shows or hides, not when one moves.
+            titlebarShield.isHidden = true
+            titlebarShield.isHidden = false
+        }
         welcomeHost.frame = bounds
         let inset = Theme.contentInset
         let sidebarWidth = CGFloat(settings.sidebarWidth)
@@ -233,6 +258,18 @@ final class BrowserRootView: NSView {
 
         sidebarResizer.isHidden = !sidebarShown
         sidebarResizer.frame = NSRect(x: sidebarWidth - 4, y: 0, width: 8, height: bounds.height)
+    }
+
+    /// How tall AppKit's titlebar is: the strip the window server would drag the window by.
+    private var titlebarStripHeight: CGFloat {
+        guard let window else { return Theme.titlebarHeight }
+        return max(Theme.titlebarHeight, window.frame.height - window.contentLayoutRect.height)
+    }
+
+    /// Development (DebugDriver `state`): where the chrome sits, in points from the window's top-left.
+    var debugChromeSummary: String {
+        tabsOnTop ? "topBar=\(NSStringFromRect(topBar.frame)) \(topBar.debugSummary)"
+                  : "header=\(NSStringFromRect(header.frame)) sidebar=\(NSStringFromRect(sidebarContainer.frame))"
     }
 
     func focusAgentComposer() {
@@ -315,8 +352,9 @@ final class SidebarHeaderView: NSView {
 
     override func layout() {
         super.layout()
+        // On the row's centre line, with the traffic lights.
         let size: CGFloat = 26
-        let y = (Theme.titlebarHeight - size) / 2 - 2
+        let y = ((Theme.titlebarHeight - size) / 2).rounded()
         toggle.frame = NSRect(x: 76, y: y, width: size, height: size)
         reload.frame = NSRect(x: bounds.width - 8 - size, y: y, width: size, height: size)
         forward.frame = NSRect(x: reload.frame.minX - size, y: y, width: size, height: size)
@@ -346,6 +384,12 @@ final class WindowDragView: NSView {
     override var mouseDownCanMoveWindow: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        Self.handle(event, in: window)
+    }
+
+    /// What a titlebar does with a click: a double click zooms the window (or
+    /// minimizes it, as System Settings says); anything else drags it.
+    static func handle(_ event: NSEvent, in window: NSWindow?) {
         if event.clickCount == 2 {
             let action = UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") ?? "Maximize"
             if action == "Minimize" { window?.performMiniaturize(nil) } else if action != "None" { window?.performZoom(nil) }
@@ -353,6 +397,22 @@ final class WindowDragView: NSView {
         }
         window?.performDrag(with: event)
     }
+}
+
+/// Lies under the whole titlebar strip, below every other view.
+///
+/// The window server drags the window from any spot of that strip, before the
+/// click ever reaches Wink, unless an AppKit control that can take the keyboard
+/// covers it: the address bar, a SwiftUI button, or the top of a page with the
+/// sidebar hidden could not be clicked there. This is such a control, so the
+/// strip is Wink's: every click arrives. It never takes a click or the keyboard
+/// itself; where nothing else is on top, BrowserRootView drags the window.
+final class TitlebarShieldView: NSControl {
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func becomeFirstResponder() -> Bool { false }
+    override var canBecomeKeyView: Bool { false }
+    override func isAccessibilityElement() -> Bool { false }
 }
 
 /// Invisible vertical splitter used to resize the sidebar / agent panel.

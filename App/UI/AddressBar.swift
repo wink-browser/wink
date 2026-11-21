@@ -4,74 +4,258 @@ import WinkEngine
 
 // The address bar. At rest it says where you are, centred: a lock, the site in
 // the primary ink, the path in a quieter one (a search shows its words). Click
-// it, or press ⌘L, and it becomes a field in place: the address selected, a
-// site you have visited finished inline as you type, and suggestions dropping
-// down right under it. ⌘T still opens the command bar for a new tab.
+// anywhere on it, or press ⌘L, and it becomes a field in place: the address
+// selected, a site you have visited finished inline as you type, and
+// suggestions dropping down right under it. ⌘T still opens the command bar for
+// a new tab.
+//
+// The bar is AppKit, not SwiftUI. With tabs on top it sits in the titlebar,
+// where AppKit hands a click on a SwiftUI view to window dragging; and a
+// SwiftUI tap on top of the field's own click ended the edit it had just begun.
 
-// MARK: - The pill
+// MARK: - The bar
 
-struct AddressPill: View {
-    let state: BrowserWindowState
-    let controller: BrowserWindowController
-    /// The tab placement this pill is shown in. Only the pill on screen edits.
+@MainActor
+final class AddressBarView: NSView {
+    /// As tall as a tab, so the bar and the tab strip under it read as one set.
+    static let height: CGFloat = 30
+
+    /// The tab placement this bar is shown in. Only the bar on screen edits.
     let placement: TabPlacement
-    @State private var hovering = false
-    @Environment(\.colorScheme) private var colorScheme
+    let field = AddressTextField()
+    private unowned let controller: BrowserWindowController
+    private let searchIcon = NSImageView()
+    private let shieldHost: NSHostingView<AddressShieldSlot>
+    private let privateHost: PassthroughHostingView<PrivateBadge>
+    private var loop: ObservationLoop?
+    private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
+    private var wasEditing = false
+    private var privateTip: NSView.ToolTipTag?
+
+    private static let padding: CGFloat = 10
+    /// The shield and its count, at the end of the bar.
+    private static let shieldWidth: CGFloat = 30
+    /// "Private", at the start of the bar in a private window.
+    private static let privateWidth: CGFloat = 56
+    /// One line of 13 pt text, centred on the bar.
+    private static let lineHeight: CGFloat = 17
+
+    init(controller: BrowserWindowController, placement: TabPlacement) {
+        self.controller = controller
+        self.placement = placement
+        shieldHost = NSHostingView(rootView: AddressShieldSlot(state: controller.state))
+        privateHost = PassthroughHostingView(rootView: PrivateBadge())
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: Self.height))
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+
+        searchIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        searchIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11.5, weight: .semibold)
+        searchIcon.contentTintColor = .tertiaryLabelColor
+        // The bar sits in the titlebar; its safe area must not push the badges down.
+        shieldHost.safeAreaRegions = []
+        privateHost.safeAreaRegions = []
+        for view in [searchIcon, field, privateHost, shieldHost] as [NSView] { addSubview(view) }
+
+        loop = ObservationLoop(track: { [weak self] in
+            guard let self else { return }
+            _ = self.controller.addressEditor.isEditing
+            _ = WinkSettings.shared.tabPlacement
+            _ = self.controller.state.activeTab?.url
+        }, onChange: { [weak self] in self?.refresh() })
+        refresh()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    /// The placement on screen is this bar's: it is the one that edits.
+    private var owns: Bool { WinkSettings.shared.tabPlacement == placement }
+    private var isEditingHere: Bool { owns && controller.addressEditor.isEditing }
+
+    private func refresh() {
+        let editor = controller.addressEditor
+        field.editor = owns ? editor : nil
+        field.delegate = owns ? editor : nil
+        if owns { editor.attach(self) }
+        field.show(AddressDisplay.text(for: controller.state.activeTab?.url ?? ""))
+        let editing = isEditingHere
+        toolTip = editing ? nil : "Search or enter address (⌘L)"
+        if editing != wasEditing {
+            wasEditing = editing
+            // The address at rest and the field cross-fade.
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.12
+            layer?.add(fade, forKey: "editing")
+        }
+        needsLayout = true
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func layout() {
+        super.layout()
+        let editing = isEditingHere
+        let isWeb = controller.state.activeTab?.url.hasPrefix("http") ?? false
+        let showShield = !editing && isWeb
+        let showPrivate = !editing && controller.state.isPrivate
+        searchIcon.isHidden = !editing
+        shieldHost.isHidden = !showShield
+        privateHost.isHidden = !showPrivate
+
+        let pad = Self.padding
+        let height = bounds.height
+        let lineY = ((height - Self.lineHeight) / 2).rounded()
+        if editing {
+            let icon: CGFloat = 16
+            searchIcon.frame = NSRect(x: pad, y: ((height - icon) / 2).rounded(), width: icon, height: icon)
+            let x = pad + icon + 6
+            field.frame = NSRect(x: x, y: lineY, width: max(0, bounds.width - x - pad), height: Self.lineHeight)
+        } else {
+            let leading = pad + (showPrivate ? Self.privateWidth : 0) + 4
+            let trailing = pad + (showShield ? Self.shieldWidth : 0) + 4
+            // A wide bar keeps equal room on both sides, so the address sits on
+            // its centre; a narrow one (the sidebar's) gives the address all it can.
+            let wide = bounds.width >= 360
+            let left = wide ? max(leading, trailing) : leading
+            let right = wide ? max(leading, trailing) : trailing
+            field.frame = NSRect(x: left, y: lineY, width: max(0, bounds.width - left - right), height: Self.lineHeight)
+        }
+        privateHost.frame = NSRect(x: pad - 2, y: ((height - 20) / 2).rounded(), width: Self.privateWidth, height: 20)
+        shieldHost.frame = NSRect(x: bounds.width - pad - Self.shieldWidth, y: ((height - 22) / 2).rounded(),
+                                  width: Self.shieldWidth, height: 22)
+        if let privateTip { removeToolTip(privateTip) }
+        privateTip = showPrivate
+            ? addToolTip(privateHost.frame, owner: "Private window: nothing is saved, and agents can't see these tabs" as NSString,
+                         userData: nil)
+            : nil
+    }
+
+    // MARK: Drawing
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let editing = isEditingHere
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let fill = editing
+            ? NSColor.textBackgroundColor.withAlphaComponent(dark ? 0.55 : 1)
+            : NSColor.labelColor.withAlphaComponent(hovering ? 0.085 : 0.055)
+        layer?.backgroundColor = fill.cgColor
+        layer?.borderWidth = editing ? 1.5 : 0
+        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    // MARK: Mouse
+
+    // A click anywhere on the bar edits: it never drags the window, and the
+    // first click on an inactive window counts too, as in Safari.
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard owns else { return }
+        controller.addressEditor.begin(selectingAll: !isEditingHere)
+    }
+
+    override func resetCursorRects() {
+        if owns && !isEditingHere { addCursorRect(field.frame, cursor: .iBeam) }
+    }
+
+    // At rest, a right click offers the address, and to go where the clipboard says.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard owns, !isEditingHere else { return super.menu(for: event) }
+        let menu = NSMenu()
+        let url = controller.state.activeTab?.url ?? ""
+        if !url.isEmpty, url != "about:blank" {
+            menu.addItem(withTitle: "Copy Link", action: #selector(copyLink), keyEquivalent: "").target = self
+        }
+        if let text = Self.pasteboardText {
+            let engine = WinkSettings.shared.searchEngine
+            let isSearch = URLInput.resolve(text, searchEngine: engine) == engine.searchURL(for: text)
+            menu.addItem(withTitle: isSearch ? "Paste and Search" : "Paste and Go", action: #selector(pasteAndGo),
+                         keyEquivalent: "").target = self
+        }
+        menu.addItem(withTitle: "Edit Address", action: #selector(editAddress), keyEquivalent: "").target = self
+        return menu
+    }
+
+    private static var pasteboardText: String? {
+        let text = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty || text.count > 2048 ? nil : text
+    }
+
+    @objc private func copyLink() {
+        guard let url = controller.state.activeTab?.url else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url, forType: .string)
+    }
+
+    @objc private func pasteAndGo() {
+        guard let text = Self.pasteboardText else { return }
+        controller.open(text, inNewTab: false)
+    }
+
+    @objc private func editAddress() {
+        controller.addressEditor.begin()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+}
+
+/// The bar inside SwiftUI (the sidebar).
+struct AddressBar: NSViewRepresentable {
+    let controller: BrowserWindowController
+    let placement: TabPlacement
+
+    func makeNSView(context: Context) -> AddressBarView {
+        AddressBarView(controller: controller, placement: placement)
+    }
+
+    func updateNSView(_ view: AddressBarView, context: Context) {}
+}
+
+/// The privacy shield at the end of the bar, for the page on screen.
+struct AddressShieldSlot: View {
+    let state: BrowserWindowState
 
     var body: some View {
-        let editor = controller.addressEditor
-        let owns = WinkSettings.shared.tabPlacement == placement
-        let editing = owns && editor.isEditing
-        let tab = state.activeTab
-        let shield = !editing && (tab?.url.hasPrefix("http") ?? false)
-        // Equal room on both sides, so the address sits on the pill's centre.
-        let side: CGFloat = state.isPrivate ? 62 : (shield ? 30 : 6)
-        ZStack {
-            AddressField(editor: editor, owns: owns,
-                         display: AddressDisplay.text(for: tab?.url ?? ""))
-                .frame(height: 18)
-                .padding(.leading, editing ? 22 : side)
-                .padding(.trailing, editing ? 2 : side)
-            HStack(spacing: 6) {
-                if editing {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                } else if state.isPrivate {
-                    PrivateBadge()
-                }
-                Spacer(minLength: 0)
-                if shield, let tab { ShieldButton(tab: tab, state: state) }
-            }
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if let tab = state.activeTab { ShieldButton(tab: tab, state: state) }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(editing ? Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.55 : 1)
-                              : Color.primary.opacity(hovering ? 0.085 : 0.055))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(editing ? Color.accentColor.opacity(0.75) : .clear, lineWidth: 1.5)
-        )
-        .background(PillAnchor(editor: editor, owns: owns))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { editor.begin() }
-        .animation(.easeOut(duration: 0.15), value: editing)
-        .help(editing ? "" : "Search or enter address (⌘L)")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 struct PrivateBadge: View {
     var body: some View {
-        Text("Private")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.purple)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(Color.purple.opacity(0.15)))
-            .help("Private window: nothing is saved, and agents can't see these tabs")
+        HStack(spacing: 0) {
+            Text("Private")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.purple)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Capsule().fill(Color.purple.opacity(0.15)))
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -154,36 +338,6 @@ enum AddressDisplay {
     }
 }
 
-/// The text of the pill: a label at rest, the field while editing.
-private struct AddressField: NSViewRepresentable {
-    let editor: AddressEditor
-    let owns: Bool
-    let display: NSAttributedString
-
-    func makeNSView(context: Context) -> AddressTextField {
-        AddressTextField()
-    }
-
-    func updateNSView(_ field: AddressTextField, context: Context) {
-        field.editor = owns ? editor : nil
-        field.delegate = owns ? editor : nil
-        if owns { editor.register(field) }
-        field.show(display)
-    }
-}
-
-/// The pill's frame, for placing the suggestions under it.
-private struct PillAnchor: NSViewRepresentable {
-    let editor: AddressEditor
-    let owns: Bool
-
-    func makeNSView(context: Context) -> NSView { NSView() }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        if owns { editor.anchor = view }
-    }
-}
-
 final class AddressTextField: NSTextField {
     weak var editor: AddressEditor?
     /// The address at rest, put back when editing ends.
@@ -249,10 +403,13 @@ final class AddressTextField: NSTextField {
         ])
     }
 
-    // In the titlebar, a click here edits; it never drags the window.
+    // A click here edits; it never drags the window, and it counts on an inactive window too.
     override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        // The first click takes the whole address, as in Safari; once editing,
+        // clicks place the caret and select as in any field.
         if let editor, !isEditable {
             editor.begin()
             return
@@ -274,15 +431,16 @@ final class AddressTextField: NSTextField {
 // MARK: - Editing
 
 /// One window's address editing: the field types in place and the
-/// suggestions drop down under the pill.
+/// suggestions drop down under the bar.
 @MainActor
 @Observable
 final class AddressEditor: NSObject, NSTextFieldDelegate {
     private(set) var isEditing = false
 
     @ObservationIgnored private weak var controller: BrowserWindowController?
-    @ObservationIgnored private weak var field: AddressTextField?
-    @ObservationIgnored weak var anchor: NSView?
+    /// The bar on screen (the sidebar's or the top bar's).
+    @ObservationIgnored private weak var bar: AddressBarView?
+    private var field: AddressTextField? { bar?.field }
     @ObservationIgnored private let dropdown = SuggestionDropdown()
     @ObservationIgnored private var suggestions: [CommandSuggestion] = []
     @ObservationIgnored private var selected = 0
@@ -299,24 +457,25 @@ final class AddressEditor: NSObject, NSTextFieldDelegate {
         super.init()
     }
 
-    func register(_ field: AddressTextField) {
-        guard self.field !== field else { return }
-        let previous = self.field
-        self.field = field
+    func attach(_ bar: AddressBarView) {
+        guard self.bar !== bar else { return }
+        let previous = self.bar
+        self.bar = bar
         guard isEditing else { return }
         // The tabs moved to the other side mid-edit: stop editing in the old
-        // pill, once SwiftUI has finished this update.
+        // bar, once this update has finished.
         DispatchQueue.main.async { [weak self] in
             if let previous {
-                if previous.currentEditor() != nil { previous.window?.makeFirstResponder(nil) }
-                previous.endEditing()
+                if previous.field.currentEditor() != nil { previous.window?.makeFirstResponder(nil) }
+                previous.field.endEditing()
             }
             self?.end(focusPage: false)
         }
     }
 
-    /// Edits in place when the pill is on screen; otherwise opens the command bar.
-    func begin() {
+    /// Edits in place when the bar is on screen; otherwise opens the command bar.
+    /// Asking again while editing keeps the edit (⌘L selects the address again).
+    func begin(selectingAll: Bool = true) {
         guard let controller else { return }
         guard let field, let window = field.window, window.isVisible, !field.isHiddenOrHasHiddenAncestor,
               field.bounds.width > 40 else {
@@ -333,8 +492,10 @@ final class AddressEditor: NSObject, NSTextFieldDelegate {
             isEditing = true
             watch(window)
         }
-        window.makeFirstResponder(field)
-        field.currentEditor()?.selectAll(nil)
+        // Take the keyboard only if the field hasn't got it: making it first
+        // responder again would end the edit and start a new one.
+        if field.currentEditor() == nil { window.makeFirstResponder(field) }
+        if selectingAll { field.currentEditor()?.selectAll(nil) }
     }
 
     /// Stops editing and shows the address again.
@@ -391,7 +552,7 @@ final class AddressEditor: NSObject, NSTextFieldDelegate {
     }
 
     private func showDropdown() {
-        guard let anchor, !suggestions.isEmpty, anchor.window?.isKeyWindow == true || DebugDriver.isHeadless else {
+        guard let anchor = bar, !suggestions.isEmpty, anchor.window?.isKeyWindow == true || DebugDriver.isHeadless else {
             dropdown.hide()
             return
         }
@@ -421,7 +582,7 @@ final class AddressEditor: NSObject, NSTextFieldDelegate {
             },
             center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, let anchor = self.anchor else { return }
+                    guard let self, let anchor = self.bar else { return }
                     self.dropdown.place(under: anchor)
                 }
             },
@@ -524,7 +685,7 @@ final class AddressEditor: NSObject, NSTextFieldDelegate {
 
 // MARK: - The dropdown
 
-/// Suggestions under the pill: a child window that never takes the keyboard,
+/// Suggestions under the bar: a child window that never takes the keyboard,
 /// so the field keeps typing.
 @MainActor
 private final class SuggestionDropdown {
@@ -563,11 +724,11 @@ private final class SuggestionDropdown {
 
     func place(under anchor: NSView) {
         guard let panel, let window = anchor.window else { return }
-        let pill = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-        let width = min(max(pill.width, 460), window.frame.width - 16)
-        let x = max(window.frame.minX + 8, min(pill.minX, window.frame.maxX - 8 - width))
+        let bar = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+        let width = min(max(bar.width, 460), window.frame.width - 16)
+        let x = max(window.frame.minX + 8, min(bar.minX, window.frame.maxX - 8 - width))
         let height = CGFloat(rows.count) * Self.rowHeight + Self.inset * 2
-        panel.setFrame(NSRect(x: x, y: pill.minY - Self.gap - height, width: width, height: height), display: false)
+        panel.setFrame(NSRect(x: x, y: bar.minY - Self.gap - height, width: width, height: height), display: false)
         for (index, row) in rows.enumerated() {
             row.frame = NSRect(x: Self.inset, y: height - Self.inset - CGFloat(index + 1) * Self.rowHeight,
                                width: width - Self.inset * 2, height: Self.rowHeight)
@@ -638,9 +799,11 @@ enum Suggestions {
         var result: [CommandSuggestion] = []
         var seen = Set<String>()
 
+        // A site's front page reads the same with or without its last slash.
+        func key(_ value: String) -> String { value.hasSuffix("/") ? String(value.dropLast()) : value }
         func add(_ suggestion: CommandSuggestion) {
-            guard !seen.contains(suggestion.value) else { return }
-            seen.insert(suggestion.value)
+            guard !seen.contains(key(suggestion.value)) else { return }
+            seen.insert(key(suggestion.value))
             result.append(suggestion)
         }
 
@@ -669,11 +832,12 @@ enum Suggestions {
         if autocomplete != .none, !text.contains(" "), let top = history.first,
            Site.host(of: top.url).replacingOccurrences(of: "www.", with: "").hasPrefix(typed)
             || Site.registrableDomain(Site.host(of: top.url)).hasPrefix(typed) {
-            if let open = allTabs.first(where: { $0.url == top.url }) {
+            // Never the page you're on: switching to it, or opening it again, goes nowhere.
+            if let open = allTabs.first(where: { $0.url == top.url && $0.id != state?.activeTabID }) {
                 add(.init(kind: .tab, title: open.displayTitle, subtitle: URLInput.display(open.url),
                           value: "tab:\(open.id)", hint: "Switch to Tab", tab: open))
-                seen.insert(open.url)
-            } else {
+                seen.insert(key(open.url))
+            } else if top.url != state?.activeTab?.url {
                 add(.init(kind: .history, title: top.title.isEmpty ? URLInput.display(top.url) : top.title,
                           subtitle: URLInput.display(top.url), value: top.url, hint: "Open"))
             }
@@ -686,10 +850,10 @@ enum Suggestions {
         let lower = text.lowercased()
         for tab in allTabs where tab.title.lowercased().contains(lower) || tab.url.lowercased().contains(lower) {
             if result.count >= 5 { break }
-            if seen.contains(tab.url) || tab.id == state?.activeTabID { continue }
+            if seen.contains(key(tab.url)) || tab.id == state?.activeTabID { continue }
             add(.init(kind: .tab, title: tab.displayTitle, subtitle: URLInput.display(tab.url),
                       value: "tab:\(tab.id)", hint: "Switch to Tab", tab: tab))
-            seen.insert(tab.url)  // don't repeat an open tab as a history row
+            seen.insert(key(tab.url))  // don't repeat an open tab as a history row
         }
         // Bookmarks (brought over from another browser) come before history.
         for bookmark in HistoryStore.shared.searchBookmarks(text, limit: 3) {
@@ -697,7 +861,7 @@ enum Suggestions {
             add(.init(kind: .bookmark, title: bookmark.title.isEmpty ? URLInput.display(bookmark.url) : bookmark.title,
                       subtitle: URLInput.display(bookmark.url), value: bookmark.url, hint: "Open"))
         }
-        for entry in history {
+        for entry in history where entry.url != state?.activeTab?.url {
             if result.count >= maxRows - 2 { break }
             add(.init(kind: .history, title: entry.title.isEmpty ? URLInput.display(entry.url) : entry.title,
                       subtitle: URLInput.display(entry.url), value: entry.url, hint: "Open"))

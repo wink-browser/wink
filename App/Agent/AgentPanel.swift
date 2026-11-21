@@ -242,7 +242,6 @@ struct AgentPanelView: View {
             }
             .padding(.leading, 14).padding(.trailing, 10)
             .frame(height: Theme.titlebarHeight)
-            .padding(.top, 2)
 
             if model.items.isEmpty {
                 AgentEmptyState(model: model)

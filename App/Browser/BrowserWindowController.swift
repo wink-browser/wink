@@ -33,6 +33,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
+        // An empty compact toolbar makes AppKit's titlebar as tall as Wink's
+        // first row (Theme.titlebarHeight), so AppKit itself centres the traffic
+        // lights on the row's line, beside the buttons and the address. It shows
+        // nothing and takes no clicks: they go through to Wink's own views.
+        let toolbar = NSToolbar(identifier: "wink.chrome")
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
         window.minSize = NSSize(width: 560, height: 400)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
@@ -468,9 +476,23 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, TabHo
         AppDelegate.shared?.windowDidClose(self)
     }
 
-    func windowWillEnterFullScreen(_ notification: Notification) { windowFullscreenTransition = true }
-    func windowWillExitFullScreen(_ notification: Notification) { windowFullscreenTransition = true }
-    func windowDidFailToEnterFullScreen(_ window: NSWindow) { settleWindowFullscreen() }
+    // Full screen has no row for the toolbar to line the traffic lights up
+    // with, and it would stay on screen there as an empty band: it goes away
+    // for full screen and comes back after.
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        windowFullscreenTransition = true
+        window?.toolbar?.isVisible = false
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        windowFullscreenTransition = true
+        window?.toolbar?.isVisible = true
+    }
+
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        window.toolbar?.isVisible = true
+        settleWindowFullscreen()
+    }
     func windowDidFailToExitFullScreen(_ window: NSWindow) { settleWindowFullscreen() }
 
     func windowDidEnterFullScreen(_ notification: Notification) {

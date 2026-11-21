@@ -315,12 +315,21 @@ final class SuggestionRowView: NSView {
         subtitle.frame = NSRect(x: title.frame.maxX + 8, y: (h - 16) / 2, width: max(0, available - titleWidth - 8), height: 16)
     }
 
+    // The chosen row is a quiet tint with an accent icon, like a selected tab,
+    // rather than a slab of colour.
     private func updateColors() {
-        layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
-        title.textColor = isSelected ? .white : .labelColor
-        subtitle.textColor = isSelected ? NSColor.white.withAlphaComponent(0.75) : .secondaryLabelColor
-        hint.textColor = isSelected ? NSColor.white.withAlphaComponent(0.8) : .tertiaryLabelColor
-        icon.contentTintColor = isSelected ? .white : (isAsk ? Theme.agentNSColor : .secondaryLabelColor)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = isSelected ? NSColor.labelColor.withAlphaComponent(0.1).cgColor : NSColor.clear.cgColor
+        }
+        title.textColor = .labelColor
+        subtitle.textColor = .secondaryLabelColor
+        hint.textColor = isSelected ? .secondaryLabelColor : .tertiaryLabelColor
+        icon.contentTintColor = isAsk ? Theme.agentNSColor : (isSelected ? .controlAccentColor : .secondaryLabelColor)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColors()
     }
 
     override func mouseDown(with event: NSEvent) {

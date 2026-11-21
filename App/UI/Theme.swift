@@ -9,9 +9,14 @@ enum Theme {
     static let agentPanelMinWidth: CGFloat = 320
     static let agentPanelMaxWidth: CGFloat = 560
     static let contentInset: CGFloat = 8
-    static let contentRadius: CGFloat = 10
+    /// Concentric with the window's own corners (20 pt with Wink's compact
+    /// toolbar on macOS 26), eight points in.
+    static let contentRadius: CGFloat = 12
     static let rowHeight: CGFloat = 32
     static let rowRadius: CGFloat = 8
+    /// The chrome's first row (the sidebar's header, or the top bar): the
+    /// traffic lights, the buttons and the address all sit on its centre line.
+    /// It is AppKit's titlebar with a compact toolbar, which centres the traffic lights.
     static let titlebarHeight: CGFloat = 40
     /// Tabs on top: the row under the address bar.
     static let tabStripHeight: CGFloat = 38

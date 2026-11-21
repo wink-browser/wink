@@ -311,6 +311,35 @@ final class DebugDriver {
                     }
                 }
             }
+        case "click":
+            // Real clicks through the app's event dispatch: "x y [count]", in points
+            // from the window's top-left. A count of 2 double-clicks.
+            let numbers = argument.split(separator: " ").compactMap { Double($0) }
+            if let controller = window, let browserWindow = controller.window, numbers.count >= 2 {
+                // Like the window server: a child window over the spot (the address
+                // bar's suggestions, the command bar) gets the click, else the window.
+                let screen = browserWindow.convertPoint(toScreen: controller.root.convert(NSPoint(x: numbers[0], y: numbers[1]), to: nil))
+                let target = (browserWindow.childWindows ?? []).last { $0.isVisible && $0.frame.contains(screen) } ?? browserWindow
+                let point = target.convertPoint(fromScreen: screen)
+                let count = numbers.count > 2 ? max(1, Int(numbers[2])) : 1
+                for click in 1...count {
+                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                        if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                          timestamp: ProcessInfo.processInfo.systemUptime,
+                                                          windowNumber: target.windowNumber, context: nil,
+                                                          eventNumber: 0, clickCount: click, pressure: 1) {
+                            NSApp.postEvent(event, atStart: false)
+                        }
+                    }
+                }
+            }
+        case "resize":  // "width height" in points, keeping the window's top-left corner
+            let numbers = argument.split(separator: " ").compactMap { Double($0) }
+            if let nsWindow = window?.window, numbers.count == 2 {
+                let frame = nsWindow.frame
+                nsWindow.setFrame(NSRect(x: frame.minX, y: frame.maxY - numbers[1], width: numbers[0], height: numbers[1]),
+                                  display: true)
+            }
         case "sleep-now":
             for controller in app.windows {
                 for tab in controller.state.tabs where tab.id != controller.state.activeTabID { tab.sleep() }
@@ -334,9 +363,25 @@ final class DebugDriver {
                     lines.append("  sound playing=\(tab.isPlayingAudio) muted=\(tab.isAudioMuted)")
                 }
                 lines.append("  root=\(NSStringFromRect(controller.root.frame)) content=\(NSStringFromRect(controller.root.content.frame)) tabs=\(WinkSettings.shared.tabPlacement.rawValue)")
-                if let close = controller.window?.standardWindowButton(.closeButton) {
-                    let frame = controller.root.convert(close.convert(close.bounds, to: nil), from: nil)
-                    lines.append("  close button=\(NSStringFromRect(frame)) hidden=\(close.isHidden)")
+                if let nsWindow = controller.window {
+                    let responder = nsWindow.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+                    lines.append("  first responder=\(responder) \(controller.root.debugChromeSummary)")
+                    // Where the window server drags the window instead of clicking (AppKit's own description).
+                    let selector = NSSelectorFromString("_lastDragRegionDataDescription")
+                    if nsWindow.responds(to: selector),
+                       let description = nsWindow.perform(selector)?.takeUnretainedValue() as? String {
+                        let rows = description.split(separator: "\n").dropFirst()
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                        lines.append("  drag region (window coords, bottom-left): \(rows.isEmpty ? "none" : rows.joined(separator: " "))")
+                    }
+                }
+                if let nsWindow = controller.window, let close = nsWindow.standardWindowButton(.closeButton) {
+                    // All three: they must share one line (AppKit lays them out one by one).
+                    let lights: [String] = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { type in
+                        guard let button = nsWindow.standardWindowButton(type) else { return nil }
+                        return NSStringFromRect(controller.root.convert(button.convert(button.bounds, to: nil), from: nil))
+                    }
+                    lines.append("  traffic lights=\(lights.joined(separator: " ")) hidden=\(close.isHidden) titlebar=\(nsWindow.frame.height - nsWindow.contentLayoutRect.height)")
                 }
             }
             lines.append("blocker rules=\(WinkContentBlocker.ruleCount) cookie_controls_mode=\(WinkProfile.default.preferenceValue(forName: "profile.cookie_controls_mode") ?? "nil") webrtc=\(WinkProfile.default.preferenceValue(forName: "webrtc.ip_handling_policy") ?? "nil")")

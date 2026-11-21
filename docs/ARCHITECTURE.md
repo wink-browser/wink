@@ -69,6 +69,8 @@ Each action runs one path, `BrowserTools.act`:
 6. Settle: poll mutation counts from Swift until quiet, or wait for the load if the action navigated.
 7. Summarize what changed for the agent.
 
+**Clicks in the titlebar.** The window has a transparent, full-size titlebar, and the chrome's first row (traffic lights, buttons, the address bar) sits in it. An empty compact toolbar makes that titlebar 40 pt, the height of the row, so AppKit itself centres the traffic lights on the row's line; the toolbar is hidden in full screen. In the titlebar the window server drags the window from any spot that isn't covered by an AppKit control that can take the keyboard, before Wink sees the click, so SwiftUI views and plain views there can't be clicked. `TitlebarShieldView`, an `NSControl` under the whole strip that never takes a click or the keyboard, keeps the strip Wink's: empty spots drag the window in-app (`WindowDragView`). AppKit recomputes the drag region when a control shows or hides, not when it moves. The address bar is AppKit for the same reason.
+
 **Agent visuals.** `AuroraGlowView` is two conic gradients rotating under a static mask, which is a signed-distance falloff from the card's edge computed off the main thread. The inner half sits in the card; the outer half sits behind it and spills onto the window. `AgentOverlayView` draws the eye cursor, outlines, ripples and captions as plain CALayers. The eye is `Resources/WinkEye.png`, which `make icon` cuts from the logo artwork with an alpha matte keyed off the mustard paper. All motion runs in the render server.
 
 ## Build system
@@ -106,7 +108,8 @@ Dev builds pass Chromium `--use-mock-keychain` (`WINK_DEV_MOCK_KEYCHAIN=ON`), be
 `WINK_DEBUG_DIR=<dir>` enables a dev-only driver (`App/Core/DebugDriver.swift`):
 
 - `kill -USR1` writes window snapshots, rendering offscreen when the display sleeps.
-- `kill -USR2` runs commands from `<dir>/commands.txt`: `open`, `query`, `ask`, `accept`, `deny`, `stop-agents`, `pause-agent`, `takeover`, `limit`, `confirm-mode`, `expand-log`, `minimize-pill`, `sleep-now`, `state`, …
+- `kill -USR2` runs commands from `<dir>/commands.txt`: `open`, `query`, `ask`, `accept`, `deny`, `stop-agents`, `pause-agent`, `takeover`, `limit`, `confirm-mode`, `expand-log`, `minimize-pill`, `sleep-now`, `click x y`, `resize w h`, `address`, `state`, …
+- `state` lists the window's drag region as AppKit reports it: `none` means every click in the titlebar reaches Wink.
 
 To test next to your everyday Wink, build a separate copy and run it invisibly:
 

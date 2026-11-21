@@ -14,7 +14,7 @@ final class TopBarView: NSView {
     private let back = SidebarHeaderView.button("chevron.left", "Back (⌘[)")
     private let forward = SidebarHeaderView.button("chevron.right", "Forward (⌘])")
     private let reload = SidebarHeaderView.button("arrow.clockwise", "Reload (⌘R)")
-    private let address: NSHostingView<AddressPill>
+    private let address: AddressBarView
     private let tools: NSHostingView<TopBarTools>
     private var loop: ObservationLoop?
 
@@ -23,15 +23,14 @@ final class TopBarView: NSView {
 
     init(controller: BrowserWindowController) {
         self.controller = controller
-        address = NSHostingView(rootView: AddressPill(state: controller.state, controller: controller, placement: .top))
+        address = AddressBarView(controller: controller, placement: .top)
         tools = NSHostingView(rootView: TopBarTools(state: controller.state, controller: controller))
         super.init(frame: .zero)
         let drag = WindowDragView()
         drag.autoresizingMask = [.width, .height]
         addSubview(drag)
         for button in [back, forward, reload] { addSubview(button) }
-        // The address and tools sit in the titlebar; its safe area must not push them down.
-        address.safeAreaRegions = []
+        // The tools sit in the titlebar; its safe area must not push them down.
         tools.safeAreaRegions = []
         addSubview(address)
         addSubview(tools)
@@ -61,26 +60,30 @@ final class TopBarView: NSView {
 
     override func layout() {
         super.layout()
-        // Same line as the sidebar's header, which lines up with the traffic lights.
+        // Everything sits on the row's centre line, with the traffic lights.
+        let centre = (bounds.height / 2).rounded()
         let size: CGFloat = 26
-        let y = (bounds.height - size) / 2 - 2
+        let y = centre - size / 2
         back.frame = NSRect(x: Self.navigationX, y: y, width: size, height: size)
         forward.frame = NSRect(x: back.frame.maxX, y: y, width: size, height: size)
         reload.frame = NSRect(x: forward.frame.maxX, y: y, width: size, height: size)
 
         let toolsWidth = ceil(tools.fittingSize.width)
-        tools.frame = NSRect(x: bounds.width - 12 - toolsWidth, y: y - 2, width: toolsWidth, height: 30)
+        tools.frame = NSRect(x: bounds.width - 12 - toolsWidth, y: centre - 15, width: toolsWidth, height: 30)
 
-        // The address is centred on the window, as wide as it can be up to 600,
-        // and fills the gap instead when centring would leave it too narrow.
-        let pillHeight: CGFloat = 32
-        let pillY = (bounds.height - pillHeight) / 2 - 2
+        // The address is centred on the window and grows with it (420 to 720 wide).
+        // When the buttons leave too little room, it shifts off centre only as
+        // far as it must, then narrows to the gap between them.
+        let height = AddressBarView.height
         let left = reload.frame.maxX + 16
         let right = tools.frame.minX - 16
-        let half = min(300, bounds.midX - left, right - bounds.midX)
-        address.frame = half >= 150
-            ? NSRect(x: bounds.midX - half, y: pillY, width: half * 2, height: pillHeight)
-            : NSRect(x: left, y: pillY, width: max(0, right - left), height: pillHeight)
+        let width = min(max(0, right - left), min(720, max(420, (bounds.width * 0.42).rounded())))
+        let x = min(max(bounds.midX - width / 2, left), right - width)
+        address.frame = NSRect(x: x.rounded(), y: centre - height / 2, width: width, height: height)
+    }
+
+    var debugSummary: String {
+        "back=\(NSStringFromRect(back.frame)) address=\(NSStringFromRect(address.frame)) tools=\(NSStringFromRect(tools.frame))"
     }
 
     private func refresh() {
